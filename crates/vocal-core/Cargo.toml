@@ -1,0 +1,27 @@
+[package]
+name = "vocal-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+ndarray.workspace = true
+ort.workspace = true
+sha2.workspace = true
+hex.workspace = true
+async-trait.workspace = true
+voice-pack = { path = "../voice-pack" }
+
+[dev-dependencies]
+mockito.workspace = true
+
+[[example]]
+name = "simple_speak"
+path = "examples/simple_speak.rs"

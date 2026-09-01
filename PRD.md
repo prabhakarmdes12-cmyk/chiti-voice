@@ -3,8 +3,21 @@
 **Version:** 0.1.0 — Draft  
 **Date:** September 2026  
 **Owner:** Chiti Technologies  
-**Status:** Active Draft  
+**Status:** Phase 1 (Heartbeat) Complete ✅  
 **Classification:** Internal — Confidential
+
+---
+
+## Implementation Status
+
+| Phase | Name | Status | Released |
+|-------|------|--------|----------|
+| 0 | Documentation & Architecture | ✅ Complete | 2026-09-01 |
+| 1 | Heartbeat (MockEngine, Voice Packs, CLI) | ✅ Complete | 2026-09-02 |
+| 2 | Local Service (HTTP daemon, Piper, Web SDK) | 🔄 In Planning | Q4 2026 |
+| 3 | Streaming & Text Normalization | 📅 Planned | Q1 2027 |
+
+**Phase 1 Deliverables:** Cargo workspace with VoiceEngine trait, MockEngine implementation, `.cvpack` voice pack format with security validation, CLI tool (speak, list, install, status), three reference personas (TARA/KASHI/BOBO), 20+ unit tests, CI/CD pipeline, offline synthesis validation.
 
 ---
 

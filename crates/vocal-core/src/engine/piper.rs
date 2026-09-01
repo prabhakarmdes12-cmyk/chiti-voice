@@ -1,0 +1,212 @@
+//! Piper TTS Engine Adapter
+//!
+//! Adapts the Piper TTS model to the VoiceEngine interface.
+//! Piper is a fast, lightweight neural TTS model suitable for embedded and offline synthesis.
+
+use crate::engine::VoiceCapabilities;
+use crate::error::{VoiceErrorCode, VoiceResult};
+use crate::synthesis::{AudioMetadata, SynthesisFormat, SynthesisRequest, SynthesisResponse};
+use async_trait::async_trait;
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tracing::{debug, error, info};
+
+/// Configuration for a Piper voice model
+#[derive(Debug, Clone)]
+pub struct PiperVoiceConfig {
+    /// Voice identifier (e.g., "tara-en-IN", "kashi-hi-IN")
+    pub voice_id: String,
+    /// Path to the ONNX model file within the voice pack
+    pub model_path: String,
+    /// Supported language (ISO 639 code)
+    pub language: String,
+    /// Sample rate of the model
+    pub sample_rate: u32,
+    /// Phoneme set used by the model
+    pub phonemes: Vec<String>,
+}
+
+/// Piper TTS Engine implementation
+pub struct PiperEngine {
+    voices: HashMap<String, PiperVoiceConfig>,
+    capabilities: Vec<VoiceCapabilities>,
+    current_voice: Arc<Mutex<Option<String>>>,
+}
+
+impl PiperEngine {
+    pub fn new() -> Self {
+        Self {
+            voices: HashMap::new(),
+            capabilities: Vec::new(),
+            current_voice: Arc::new(Mutex::new(None)),
+        }
+    }
+
+    /// Register a voice model with this engine
+    pub fn register_voice(&mut self, config: PiperVoiceConfig) {
+        let voice_id = config.voice_id.clone();
+        let language = config.language.clone();
+
+        // Create capability info
+        let cap = VoiceCapabilities {
+            voice_id: voice_id.clone(),
+            display_name: format!("Piper {}", voice_id),
+            supported_languages: vec![language],
+            supported_formats: vec![
+                "pcm_f32".to_string(),
+                "wav".to_string(),
+                "ogg".to_string(),
+            ],
+            supports_streaming: true,
+            min_text_length: 1,
+            max_text_length: 5000,
+            engine_name: "piper".to_string(),
+            engine_version: "1.0.0".to_string(),
+        };
+
+        self.voices.insert(voice_id, config);
+        self.capabilities.push(cap);
+
+        debug!("Registered Piper voice: {}", voice_id);
+    }
+
+    /// Get configuration for a specific voice
+    pub fn get_voice_config(&self, voice_id: &str) -> Option<&PiperVoiceConfig> {
+        self.voices.get(voice_id)
+    }
+}
+
+impl Default for PiperEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl crate::engine::VoiceEngine for PiperEngine {
+    async fn initialize(&mut self) -> VoiceResult<()> {
+        // TODO: Initialize ONNX Runtime, load model metadata
+        // For now, this is a no-op
+        info!("Piper engine initialized");
+        Ok(())
+    }
+
+    async fn health(&self) -> VoiceResult<crate::engine::EngineHealth> {
+        // TODO: Check ONNX Runtime availability
+        if self.voices.is_empty() {
+            Ok(crate::engine::EngineHealth::Degraded(
+                "No voices registered".to_string(),
+            ))
+        } else {
+            Ok(crate::engine::EngineHealth::Healthy)
+        }
+    }
+
+    async fn list_voices(&self) -> VoiceResult<Vec<VoiceCapabilities>> {
+        Ok(self.capabilities.clone())
+    }
+
+    async fn voice_capabilities(&self, voice_id: &str) -> VoiceResult<VoiceCapabilities> {
+        self.capabilities
+            .iter()
+            .find(|v| v.voice_id == voice_id)
+            .cloned()
+            .ok_or_else(|| {
+                error!("Voice not found: {}", voice_id);
+                crate::error::VoiceError::new(
+                    VoiceErrorCode::VoiceNotFound,
+                    format!("Voice not found: {}", voice_id),
+                )
+            })
+    }
+
+    async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse> {
+        // Validate voice
+        let _config = self
+            .get_voice_config(&request.voice)
+            .ok_or_else(|| {
+                crate::error::VoiceError::new(
+                    VoiceErrorCode::VoiceNotFound,
+                    format!("Voice not found: {}", request.voice),
+                )
+            })?;
+
+        // TODO: Run ONNX model inference
+        // For now, return error to indicate not yet implemented
+        Err(crate::error::VoiceError::new(
+            VoiceErrorCode::SynthesisFailed,
+            "Piper synthesis not yet implemented (ONNX integration pending)",
+        ))
+    }
+
+    async fn stream(
+        &self,
+        _request: &SynthesisRequest,
+    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>> {
+        // TODO: Implement streaming synthesis
+        Err(crate::error::VoiceError::new(
+            VoiceErrorCode::SynthesisFailed,
+            "Piper streaming not yet implemented",
+        ))
+    }
+
+    async fn stop(&self) -> VoiceResult<()> {
+        // Update current voice state
+        let mut voice = self.current_voice.lock().await;
+        *voice = None;
+        Ok(())
+    }
+
+    async fn dispose(&mut self) -> VoiceResult<()> {
+        // TODO: Clean up ONNX Runtime resources
+        self.voices.clear();
+        self.capabilities.clear();
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_piper_engine_creation() {
+        let engine = PiperEngine::new();
+        assert!(engine.voices.is_empty());
+    }
+
+    #[test]
+    fn test_register_voice() {
+        let mut engine = PiperEngine::new();
+        let config = PiperVoiceConfig {
+            voice_id: "tara-en-IN".to_string(),
+            model_path: "models/tara.onnx".to_string(),
+            language: "en-IN".to_string(),
+            sample_rate: 22050,
+            phonemes: vec![],
+        };
+
+        engine.register_voice(config);
+        assert_eq!(engine.capabilities.len(), 1);
+        assert!(engine.get_voice_config("tara-en-IN").is_some());
+    }
+
+    #[tokio::test]
+    async fn test_piper_health() {
+        let engine = PiperEngine::new();
+        let health = engine.health().await.unwrap();
+        assert!(matches!(
+            health,
+            crate::engine::EngineHealth::Degraded(_)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_piper_voice_not_found() {
+        let engine = PiperEngine::new();
+        let result = engine.voice_capabilities("nonexistent").await;
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code(), VoiceErrorCode::VoiceNotFound);
+    }
+}

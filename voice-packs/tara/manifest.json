@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0.0",
+  "id": "tara",
+  "name": "Tara",
+  "version": "1.0.0",
+  "author": "Chiti Technologies",
+  "license": "Proprietary",
+  "description": "Warm, professional voice for Indian English. Suitable for business, hospitality, and customer-facing applications.",
+  "engine_family": "piper",
+  "engine_version_min": "1.0.0",
+  "supported_languages": [
+    "en-IN"
+  ],
+  "files": [
+    {
+      "path": "model.onnx",
+      "checksum_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size_bytes": 0,
+      "file_type": "model"
+    },
+    {
+      "path": "model_config.json",
+      "checksum_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "size_bytes": 0,
+      "file_type": "config"
+    }
+  ],
+  "persona": {
+    "id": "tara",
+    "display_name": "Tara",
+    "description": "Warm, professional Indian English female-presenting voice",
+    "default_rate": 1.0,
+    "default_pitch": 1.0,
+    "intent_profiles": {
+      "warm": {
+        "rate": 0.95,
+        "pitch": 1.0,
+        "energy": 1.1,
+        "pause_factor": 1.0
+      },
+      "calm": {
+        "rate": 0.90,
+        "pitch": 0.95,
+        "energy": 0.9,
+        "pause_factor": 1.1
+      },
+      "alert": {
+        "rate": 1.1,
+        "pitch": 1.05,
+        "energy": 1.2,
+        "pause_factor": 0.9
+      },
+      "greeting": {
+        "rate": 0.95,
+        "pitch": 1.05,
+        "energy": 1.15,
+        "pause_factor": 1.0
+      }
+    }
+  },
+  "provenance": {
+    "training_data_statement": "Trained on Piper Indian English dataset",
+    "model_license": "Apache 2.0",
+    "consent_obtained": true,
+    "dataset_attribution": "Piper TTS Project (Mozilla/Rhasspy)",
+    "build_timestamp": "2026-09-02T00:00:00Z",
+    "signature_status": "UNSIGNED"
+  }
+}

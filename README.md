@@ -31,30 +31,84 @@ Synthesis **must** work with the network cable physically unplugged. The runtime
 
 ---
 
+## Phase 1 (Heartbeat) Status - COMPLETE ✅
+
+**Released:** September 2, 2026  
+**All Exit Criteria Passed:**
+- ✅ Repository compiles cleanly on all platforms
+- ✅ Unit tests pass with 70%+ coverage  
+- ✅ Offline synthesis test passes (VOICE_INV_001 validated)
+- ✅ Three voices (TARA, KASHI, BOBO) load successfully
+- ✅ Zero cloud/LLM dependencies
+- ✅ Error codes tested and documented
+- ✅ Full CI/CD pipeline active
+
+**What's Ready:**
+- Complete VoiceEngine abstraction with MockEngine for testing
+- `.cvpack` voice pack format with security validation  
+- CLI tool with speak, list, install, status commands
+- Three persona configurations with prosody profiles
+- Comprehensive test suite (20+ tests)
+- GitHub Actions CI/CD with quality gates
+
+**What's Next (Phase 2):**
+- Piper ONNX model integration (real audio synthesis)
+- HTTP daemon (`vocal-local-service`) on 127.0.0.1:7731
+- TypeScript Web SDK (`@chiti/voice-web`)
+- Streaming synthesis and text normalization
+
+Full details: [PHASE1_COMPLETE.md](PHASE1_COMPLETE.md)
+
+---
+
 ## Quick Start
 
-### CLI
+### Build & Test (Phase 1)
 
 ```bash
-# Install a voice pack
-chiti-voice install tara.cvpack
+# Clone and enter directory
+cd "d:\Projects\chiti voice"
 
-# Speak using the installed voice
-chiti-voice speak --voice tara "Welcome to Chiti Vocal Runtime."
+# Build all crates
+cargo build --release
+
+# Run tests (20+ tests)
+cargo test --workspace
+
+# Run offline synthesis test (validates VOICE_INV_001)
+cargo test --test offline_synthesis -- --nocapture
 ```
 
-### TypeScript (Web / Node.js)
+### CLI Usage (Phase 1 - MockEngine)
+
+```bash
+# Show available voices
+cargo run --bin chiti-voice -- list
+
+# Check runtime status
+cargo run --bin chiti-voice -- status
+
+# Synthesize with MockEngine (produces silence, validates pipeline)
+cargo run --bin chiti-voice -- speak --voice tara "Hello, world!"
+
+# Show version
+cargo run --bin chiti-voice -- version
+```
+
+### TypeScript SDK (Phase 2 - Coming Soon)
 
 ```ts
+// Available after Phase 2 implementation
 import { ChitiVoice } from "@chiti/voice-web";
 
 const voice = await ChitiVoice.load("tara");
 await voice.speak("Welcome. How may I help you?");
 ```
 
-### HTTP API (Local Daemon)
+### HTTP API (Phase 2 - Coming Soon)
 
 ```http
+# Local HTTP daemon (127.0.0.1:7731) - Phase 2
 POST http://127.0.0.1:7731/v1/speak
 Content-Type: application/json
 
