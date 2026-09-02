@@ -16,7 +16,17 @@ default = []
 #   * Cross-compiling ONNX Runtime onto embedded targets (armv7/aarch64/riscv) is
 #     its own problem and should not be forced on the base crate.
 # See docs/ROADMAP_EMBEDDED.md before enabling this in a release build for a device.
-piper = ["dep:ort", "dep:ndarray"]
+#
+# It is intentionally EMPTY right now, and that is a real constraint rather than a
+# shortcut: no code in this crate references ort/ndarray yet, and the project's lint job
+# runs `cargo clippy --all-targets --all-features`, so a feature that pulls `ort` with
+# its default features makes every lint/offline job run ONNX Runtime's *download*
+# build script. An air-gapped project must not need a network just to lint.
+# Step 1 of docs/ROADMAP_EMBEDDED.md switches this to
+# piper = ["dep:ort", "dep:ndarray"] in the same commit that adds the inference code,
+# together with ort = { default-features = false, features = ["load-dynamic"] } (or a
+# vendored ONNX Runtime) so the download never becomes a build requirement.
+piper = []
 
 [dependencies]
 tokio.workspace = true

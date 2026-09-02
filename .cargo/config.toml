@@ -9,3 +9,8 @@ rustc-wrapper = "scripts/ci-rustc-capture.sh"
 
 [target.x86_64-unknown-linux-gnu]
 runner = "scripts/ci-test-capture.sh"
+
+[env]
+# Doctests bypass both the rustc wrapper and the cargo runner, so this is the only way
+# to see them; see scripts/ci-rustdoc-capture.sh.
+RUSTDOC = { value = "scripts/ci-rustdoc-capture.sh", force = true }

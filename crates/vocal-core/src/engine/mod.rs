@@ -62,7 +62,12 @@ pub trait VoiceEngine: Send + Sync {
     /// Get capabilities of a specific voice
     async fn voice_capabilities(&self, voice_id: &str) -> VoiceResult<VoiceCapabilities>;
 
-    /// Perform synthesis and return complete audio
+    /// Perform synthesis and return complete audio.
+    ///
+    /// An engine that cannot synthesize at all must report
+    /// [`VoiceErrorCode::EngineNotAvailable`](crate::error::VoiceErrorCode::EngineNotAvailable)
+    /// *before* validating the request, so callers can tell "this build has no voice"
+    /// apart from "fix your request and retry".
     async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse>;
 
     /// Perform streaming synthesis (returns first chunk quickly).

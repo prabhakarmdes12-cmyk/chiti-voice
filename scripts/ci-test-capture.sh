@@ -11,14 +11,17 @@
 
 bin="$1"
 shift
-"$bin" "$@" > /tmp/test-out.txt 2>&1
+# mktemp, not a fixed /tmp path: cargo runs the workspace's test binaries concurrently
+# and they were truncating each other's output.
+scratch=$(mktemp)
+"$bin" "$@" > "$scratch" 2>&1
 code=$?
-cat /tmp/test-out.txt
+cat "$scratch"
 
 if [ "$code" -ne 0 ]; then
-  python3 - <<'PY'
-import re
-raw = open("/tmp/test-out.txt", encoding="utf-8", errors="replace").read()
+  python3 - "$scratch" <<'PY'
+import re, sys
+raw = open(sys.argv[1], encoding="utf-8", errors="replace").read()
 
 failed = re.findall(r"^(?:test )?(\S+) \.\.\. (?:FAILED|failed)\s*$", raw, re.M)
 panics = re.findall(r"^(?:\s*)thread '.*? panicked.*$", raw, re.M)
@@ -43,4 +46,5 @@ for i in range(0, len(text), 1300):
 PY
 fi
 
+rm -f "$scratch"
 exit "$code"
