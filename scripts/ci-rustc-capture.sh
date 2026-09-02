@@ -43,9 +43,16 @@ def is_ours(d):
         # A span is authoritative: a diagnostic inside a registry crate is never ours,
         # even while we are compiling one of our own crates (it was pulled in by us).
         return any((s.get("file_name") or "").startswith(OURS) for s in spans)
-    # No location at all (e.g. "aborting due to …", link errors): only ours if the
-    # crate currently being compiled belongs to this workspace.
-    return MATCH
+    # No location at all (E0463 "can't find crate", link errors, E0601): the crate-name
+    # list is not enough, because integration tests / examples / benches compile under
+    # their own names. A target that receives one of our crates as `--extern` is ours.
+    if MATCH:
+        return True
+    try:
+        args = open("/tmp/rustc-wrapper-args", encoding="utf-8", errors="replace").read()
+    except OSError:
+        return False
+    return any(f"--extern {name}=" in args for name in ("vocal_core", "voice_pack", "chiti_voice_cli"))
 
 
 seen, lines = set(), []
@@ -104,10 +111,10 @@ if not lines:
         head = m.group(1).strip() if m else ""
         if not head and "error" not in raw.lower():
             raise SystemExit(0)
-        import re as _re
-        crate = _re.search(r"--crate-name[= ](\S+)", open("/tmp/rustc-wrapper-args").read())
+        crate = re.search(r"--crate-name[= ](\S+)", open("/tmp/rustc-wrapper-args").read())
         name = crate.group(1) if crate else "?"
-        lines = [f"DEPENDENCY {name}: {head or 'no error line'}; tail: " + raw[-700:].replace("\n", "|")]
+        tag = "DEPENDENCY" if not MATCH else "OUR-TARGET"
+        lines = [f"{tag} {name}: {head or 'no error line'}; tail: " + raw[-700:].replace("\n", "|")]
 
 # GitHub keeps at most 10 annotations per check run, so pack the list into a few long
 # chunks instead of emitting one annotation per diagnostic.

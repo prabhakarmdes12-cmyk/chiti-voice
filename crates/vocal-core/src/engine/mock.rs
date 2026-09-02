@@ -90,7 +90,7 @@ impl crate::engine::VoiceEngine for MockEngine {
             .ok_or_else(|| {
                 crate::error::VoiceError::new(
                     VoiceErrorCode::VoiceNotFound,
-                    format!("Voice not found: {}", voice_id),
+                    format!("Voice not found: {voice_id}"),
                 )
             })
     }
@@ -118,9 +118,7 @@ impl crate::engine::VoiceEngine for MockEngine {
     async fn stream(
         &self,
         request: &SynthesisRequest,
-    ) -> VoiceResult<
-        std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>,
-    > {
+    ) -> VoiceResult<crate::engine::AudioStream> {
         let request = request.clone();
         let sample_rate = self.sample_rate;
 

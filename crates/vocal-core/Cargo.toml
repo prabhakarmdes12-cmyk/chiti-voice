@@ -38,9 +38,17 @@ hex.workspace = true
 async-trait.workspace = true
 voice-pack = { path = "../voice-pack" }
 
-# Optional: only compiled with --features piper.
-ort = { workspace = true, optional = true }
-ndarray = { workspace = true, optional = true }
+# ONNX dependencies are NOT declared here on purpose, and this is load-bearing rather
+# than tidiness: an optional dependency implicitly becomes a feature of the same name, so
+# `--all-features` enables it whether or not `piper` exists. The lint job runs
+# `cargo clippy --all-targets --all-features -- -D warnings`, which would then build `ort`,
+# whose default features run a build script that DOWNLOADS prebuilt ONNX Runtime — a network
+# fetch inside the "offline" project's lint gate, and a failure that never reaches our code
+# (the job died inside a dependency, so it reported zero diagnostics for this workspace).
+# Both are declared in [workspace.dependencies] as the plan's anchor; Step 1 of
+# docs/ROADMAP_EMBEDDED.md adds them here together with the inference code, in the same
+# commit that also changes the lint invocation to stop using --all-features (or vendors
+# ONNX Runtime / sets ort = { default-features = false, features = ["load-dynamic"] }).
 
 [dev-dependencies]
 # NOTE: no HTTP-mocking library here on purpose. vocal-core must not gain a network

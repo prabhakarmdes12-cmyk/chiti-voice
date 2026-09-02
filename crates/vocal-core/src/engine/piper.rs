@@ -51,7 +51,7 @@ impl PiperEngine {
         // Create capability info
         let cap = VoiceCapabilities {
             voice_id: voice_id.clone(),
-            display_name: format!("Piper {}", voice_id),
+            display_name: format!("Piper {voice_id}"),
             supported_languages: vec![language],
             supported_formats: vec![
                 "pcm_f32".to_string(),
@@ -120,10 +120,10 @@ impl crate::engine::VoiceEngine for PiperEngine {
             .find(|v| v.voice_id == voice_id)
             .cloned()
             .ok_or_else(|| {
-                error!("Voice not found: {}", voice_id);
+                error!("Voice not found: {voice_id}");
                 crate::error::VoiceError::new(
                     VoiceErrorCode::VoiceNotFound,
-                    format!("Voice not found: {}", voice_id),
+                    format!("Voice not found: {voice_id}"),
                 )
             })
     }
@@ -150,9 +150,7 @@ impl crate::engine::VoiceEngine for PiperEngine {
     async fn stream(
         &self,
         _request: &SynthesisRequest,
-    ) -> VoiceResult<
-        std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>,
-    > {
+    ) -> VoiceResult<crate::engine::AudioStream> {
         Err(crate::error::VoiceError::new(
             VoiceErrorCode::EngineNotAvailable,
             "Piper streaming is not implemented: no ONNX inference path exists yet",

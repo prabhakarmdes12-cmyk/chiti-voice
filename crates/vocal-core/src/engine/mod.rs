@@ -48,6 +48,13 @@ pub enum EngineHealth {
 ///
 /// All backend implementations (Piper, Kokoro, etc.) must implement this trait.
 /// This design ensures that applications never depend directly on a specific backend.
+/// One chunk of synthesized audio, streamed.
+///
+/// Pinned at construction so any caller can `await` it without knowing the concrete
+/// future type; `Box<dyn Future>` alone is `!Unpin` and cannot be polled.
+pub type AudioStream =
+    std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>;
+
 #[async_trait]
 pub trait VoiceEngine: Send + Sync {
     /// Initialize the engine (load models, allocate memory, etc.)
@@ -81,9 +88,7 @@ pub trait VoiceEngine: Send + Sync {
     async fn stream(
         &self,
         request: &SynthesisRequest,
-    ) -> VoiceResult<
-        std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>,
-    >;
+    ) -> VoiceResult<AudioStream>;
 
     /// Stop any in-progress synthesis
     async fn stop(&self) -> VoiceResult<()>;
