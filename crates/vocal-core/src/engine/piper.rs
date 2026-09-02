@@ -128,24 +128,22 @@ impl crate::engine::VoiceEngine for PiperEngine {
             })
     }
 
-    async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse> {
-        // Validate voice
-        self.get_voice_config(&request.voice).ok_or_else(|| {
-            crate::error::VoiceError::new(
-                VoiceErrorCode::VoiceNotFound,
-                format!("Voice not found: {}", request.voice),
-            )
-        })?;
-
-        // NOT IMPLEMENTED. ONNX inference is not wired up: the `ort` and `ndarray`
-        // dependencies are optional (behind the `piper` cargo feature) and are
-        // referenced by no code in this crate. Until that lands, this engine can
-        // validate voices but cannot produce audio, and must say so loudly rather
-        // than returning silence that looks like success.
-        // See docs/ROADMAP_EMBEDDED.md ("Phase 2: real audio") for the plan.
+    async fn synthesize(&self, _request: &SynthesisRequest) -> VoiceResult<SynthesisResponse> {
+        // Capability is reported before request validation, deliberately. Refusing with
+        // VoiceNotFound for an unknown id would tell the caller to fix the request and
+        // retry, when in fact no request can succeed in this build. (Same reasoning as
+        // an HTTP API returning 503 rather than 404 for a bad parameter on a dead model.)
+        // The trait documents this ordering contract for all engines.
+        //
+        // NOT IMPLEMENTED. No code in this crate references `ort`, so there is nothing
+        // to validate against yet; this engine can list voices but cannot produce audio,
+        // and says so loudly rather than returning silence that looks like success.
+        // When inference lands (docs/ROADMAP_EMBEDDED.md Step 1), validate
+        // `request.voice` against `self.get_voice_config` *after* this refusal and
+        // return VoiceErrorCode::VoiceNotFound for ids that are not registered.
         Err(crate::error::VoiceError::new(
             VoiceErrorCode::EngineNotAvailable,
-            "Piper synthesis is not implemented: no ONNX inference path exists yet (enable --features piper and implement OrtSession run; see docs/ROADMAP_EMBEDDED.md)",
+            "Piper synthesis is not implemented: no ONNX inference path exists yet (see docs/ROADMAP_EMBEDDED.md, Step 1)",
         ))
     }
 

@@ -197,7 +197,13 @@ mod pack_error_mapping_tests {
         assert_eq!(mapped(LoadError::MissingManifest), VoiceErrorCode::PackInvalidFormat);
         assert_eq!(
             mapped(LoadError::InvalidManifest("missing field `schema_version`".into())),
-            VoiceErrorCode::PackInvalidFormat
+            VoiceErrorCode::PackSchemaMismatch,
+            "a manifest that fails to match the schema is a schema mismatch, not a parse error"
+        );
+        assert_eq!(
+            mapped(LoadError::InvalidManifest("expected value at line 1 column 1".into())),
+            VoiceErrorCode::PackInvalidFormat,
+            "unparseable JSON has no schema to disagree with"
         );
         assert_eq!(
             mapped(LoadError::LimitExceeded("too big".into())),

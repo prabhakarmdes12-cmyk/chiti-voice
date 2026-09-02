@@ -185,8 +185,21 @@ mod tests {
             },
         };
         let written = write_response_wav(&response, &path).unwrap();
-        assert_eq!(written, 48);
-        assert_eq!(&std::fs::read(&path).unwrap()[0..4], b"RIFF");
+
+        // One 32-bit float sample (4 input bytes) becomes one 16-bit sample (2 bytes)
+        // inside a 44-byte canonical header: 46, not 48. The header fields are checked
+        // against each other so a future change to either side cannot silently pass.
+        assert_eq!(written, 46, "44-byte header + one 16-bit sample");
+        let bytes = std::fs::read(&path).unwrap();
+        assert_eq!(&bytes[0..4], b"RIFF");
+        assert_eq!(&bytes[8..12], b"WAVE");
+        assert_eq!(
+            &bytes[4..8],
+            &((written as u32 - 8).to_le_bytes()),
+            "RIFF chunk size must equal file size - 8"
+        );
+        assert_eq!(&bytes[40..44], b"data");
+        assert_eq!(&bytes[44..46], [0u8, 0u8], "one silent sample");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
