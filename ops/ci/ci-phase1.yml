@@ -294,7 +294,16 @@ jobs:
       - name: No stale false claims
         run: |
           set -euo pipefail
-          AVAIL=$(grep -o 'REAL_SYNTHESIS_AVAILABLE: *\(true\|false\)' crates/vocal-core/src/lib.rs | tail -1 | grep -o '\(true\|false\)$')
+          # Read the flag from its declaration. The first version of this line grepped for
+          # `NAME: (true|false)` and the source says `NAME: bool = false`, so AVAIL was empty,
+          # `[ "$AVAIL" = "false" ]` was false, and every check below was silently skipped.
+          # A gate that cannot run is worse than no gate, so an unreadable flag is now an error.
+          AVAIL=$(grep -E 'REAL_SYNTHESIS_AVAILABLE: *(bool *)?=' crates/vocal-core/src/lib.rs \
+                  | tail -1 | grep -oE '(true|false)' | tail -1 || true)
+          if [ -z "$AVAIL" ]; then
+            echo "::error::could not read REAL_SYNTHESIS_AVAILABLE from crates/vocal-core/src/lib.rs - this job would skip every claim check below, which is the exact failure mode it exists to catch"
+            exit 1
+          fi
           if [ "$AVAIL" = "false" ]; then
             # Narrow, literal denylist of claims that were made and were false.
             if grep -nE "load and produce audio|compiles cleanly \(all platforms\)|Unit tests pass with coverage|ALL PHASE 1 EXIT CRITERIA PASSED|TypeScript Web SDK \(both" \

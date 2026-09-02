@@ -41,10 +41,10 @@ model in this repo yet and a hard gate would keep CI permanently red. It surface
 visible warning with the reason. Make it blocking in the PR that lands the first real model.
 
 
-## Three more defects confirmed while making the workspace compile (2026-09-03)
+## Four more defects — each found by *executing* a gate, never by reading it (2026-09-03)
 
-These were found by watching real runs, not by reading the YAML, so they are recorded here
-with the mechanism that makes them bite.
+The first three were found by watching real runs; the fourth by running the step locally.
+Both beats reading the YAML, which is how each of these looked correct.
 
 1. **`--all-features` in a lint job is not "more coverage", it is a different build.**
    Because `ort` was declared `optional = true`, cargo created an implicit `ort` feature,
@@ -68,6 +68,15 @@ with the mechanism that makes them bite.
    every toolchain — which is also how a "green" build can hide a cold-cache failure. Keep
    the key on the lockfile *and* commit the lockfile (`cargo generate-lockfile` on a
    networked machine), and include `matrix.rust` in the key if nightly ever comes back.
+
+4. **A gate that cannot parse its own input skips silently and reports success.** The
+   `docs-truth` job extracts `REAL_SYNTHESIS_AVAILABLE` to decide whether the stale-claim scan
+   applies, and extracted it with `grep 'NAME: (true|false)'` — while the source declares
+   `NAME: bool = false`. Empty variable, `[ "$AVAIL" = "false" ]` false, every check below
+   skipped, on every branch, forever, green the whole time. Fixed by matching the declaration as
+   written *and* by making an unreadable flag a hard error: a check that cannot determine
+   whether it should run must fail, not proceed. Verified in both directions — the scan passes
+   on this tree, and a planted affirmative claim in `AGENTS.md` makes it fire.
 
 ## Why some debugging commits in this branch look strange
 
