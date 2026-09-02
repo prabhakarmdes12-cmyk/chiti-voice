@@ -11,6 +11,7 @@
 pub mod engine;
 pub mod error;
 pub mod persona;
+pub mod phoneme_tokens;
 pub mod pipeline;
 pub mod state;
 pub mod synthesis;
