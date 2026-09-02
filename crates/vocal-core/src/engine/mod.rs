@@ -85,10 +85,7 @@ pub trait VoiceEngine: Send + Sync {
     /// unusable through the trait object (only reachable in a test that pinned it
     /// locally). Pinning at the source keeps `stream()` callable generically while
     /// still being `Send` for task spawning.
-    async fn stream(
-        &self,
-        request: &SynthesisRequest,
-    ) -> VoiceResult<AudioStream>;
+    async fn stream(&self, request: &SynthesisRequest) -> VoiceResult<AudioStream>;
 
     /// Stop any in-progress synthesis
     async fn stop(&self) -> VoiceResult<()>;
@@ -118,7 +115,8 @@ impl VoiceEngineRegistry {
 
     /// Register a new voice engine
     pub fn register(&mut self, name: String, engine: BoxedEngine) {
-        self.engines.insert(name, Arc::new(tokio::sync::Mutex::new(engine)));
+        self.engines
+            .insert(name, Arc::new(tokio::sync::Mutex::new(engine)));
     }
 
     /// Get a registered engine

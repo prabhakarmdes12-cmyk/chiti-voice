@@ -55,11 +55,7 @@ impl PersonaRuntime {
     }
 
     /// Get prosody parameters for a voice + intent combination
-    pub fn get_prosody(
-        &self,
-        persona_id: &str,
-        intent: Option<&str>,
-    ) -> Option<(f32, f32)> {
+    pub fn get_prosody(&self, persona_id: &str, intent: Option<&str>) -> Option<(f32, f32)> {
         let persona = self.get_persona(persona_id)?;
 
         if let Some(intent_name) = intent {

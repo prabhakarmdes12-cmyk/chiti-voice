@@ -53,11 +53,7 @@ impl PiperEngine {
             voice_id: voice_id.clone(),
             display_name: format!("Piper {voice_id}"),
             supported_languages: vec![language],
-            supported_formats: vec![
-                "pcm_f32".to_string(),
-                "wav".to_string(),
-                "ogg".to_string(),
-            ],
+            supported_formats: vec!["pcm_f32".to_string(), "wav".to_string(), "ogg".to_string()],
             supports_streaming: true,
             min_text_length: 1,
             max_text_length: 5000,
@@ -147,10 +143,7 @@ impl crate::engine::VoiceEngine for PiperEngine {
         ))
     }
 
-    async fn stream(
-        &self,
-        _request: &SynthesisRequest,
-    ) -> VoiceResult<crate::engine::AudioStream> {
+    async fn stream(&self, _request: &SynthesisRequest) -> VoiceResult<crate::engine::AudioStream> {
         Err(crate::error::VoiceError::new(
             VoiceErrorCode::EngineNotAvailable,
             "Piper streaming is not implemented: no ONNX inference path exists yet",

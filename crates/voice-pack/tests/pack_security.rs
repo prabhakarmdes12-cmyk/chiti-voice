@@ -69,13 +69,19 @@ fn zip_bomb_is_rejected_before_inflation() {
 #[test]
 fn undeclared_entry_is_rejected() {
     let msg = err_message("undeclared_entry.cvpack");
-    assert!(msg.contains("undeclared"), "unexpected rejection reason: {msg}");
+    assert!(
+        msg.contains("undeclared"),
+        "unexpected rejection reason: {msg}"
+    );
 }
 
 #[test]
 fn path_traversal_is_rejected() {
     let msg = err_message("path_traversal.cvpack");
-    assert!(msg.contains("traversal"), "unexpected rejection reason: {msg}");
+    assert!(
+        msg.contains("traversal"),
+        "unexpected rejection reason: {msg}"
+    );
 }
 
 #[test]
@@ -130,7 +136,10 @@ fn wrong_schema_version_is_rejected() {
 
 #[test]
 fn not_a_zip_is_rejected() {
-    assert!(matches!(err_of("not_a_zip.cvpack"), LoadError::InvalidZip(_)));
+    assert!(matches!(
+        err_of("not_a_zip.cvpack"),
+        LoadError::InvalidZip(_)
+    ));
 }
 
 #[test]
@@ -147,8 +156,8 @@ fn embedded_limits_are_stricter_than_desktop() {
     // 200 MB declared single file: within the desktop budget, over the Pi budget.
     let path = fixture("oversize.cvpack");
     let desktop = PackLoader::new().load(&path);
-    let embedded = PackLoader::with_validator(PackValidator::with_limits(PackLimits::embedded()))
-        .load(&path);
+    let embedded =
+        PackLoader::with_validator(PackValidator::with_limits(PackLimits::embedded())).load(&path);
 
     assert!(
         desktop.is_err(),

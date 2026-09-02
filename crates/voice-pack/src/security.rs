@@ -358,7 +358,9 @@ impl PackValidator {
                     return Err(format!("Path traversal not allowed: {path}"));
                 }
                 c if c.contains(':') => {
-                    return Err(format!("Suspicious path component not allowed: {path} ({c})"));
+                    return Err(format!(
+                        "Suspicious path component not allowed: {path} ({c})"
+                    ));
                 }
                 _ => {}
             }
@@ -429,8 +431,12 @@ mod tests {
     fn test_path_safety_reject_traversal() {
         let validator = PackValidator::new();
         assert!(validator.check_path_safety("../../etc/passwd").is_err());
-        assert!(validator.check_path_safety("models/../../etc/passwd").is_err());
-        assert!(validator.check_path_safety("..\\..\\windows\\system32").is_err());
+        assert!(validator
+            .check_path_safety("models/../../etc/passwd")
+            .is_err());
+        assert!(validator
+            .check_path_safety("..\\..\\windows\\system32")
+            .is_err());
     }
 
     #[test]
@@ -452,8 +458,12 @@ mod tests {
     #[test]
     fn test_rejects_executable_extensions() {
         let validator = PackValidator::new();
-        assert!(validator.check_extension_safety("hooks/post_install.sh").is_err());
-        assert!(validator.check_extension_safety("native/payload.dll").is_err());
+        assert!(validator
+            .check_extension_safety("hooks/post_install.sh")
+            .is_err());
+        assert!(validator
+            .check_extension_safety("native/payload.dll")
+            .is_err());
         assert!(validator.check_extension_safety("model.onnx").is_ok());
         assert!(validator.check_extension_safety("MODEL.ONNX").is_ok());
     }

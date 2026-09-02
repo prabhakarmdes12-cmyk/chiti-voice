@@ -110,9 +110,7 @@ impl PackLoader {
         // ── 2. parse + validate ─────────────────────────────────────────────
         let manifest: PackManifest = serde_json::from_str(&manifest_content)
             .map_err(|e| LoadError::InvalidManifest(e.to_string()))?;
-        manifest
-            .validate()
-            .map_err(LoadError::InvalidManifest)?;
+        manifest.validate().map_err(LoadError::InvalidManifest)?;
         self.validator
             .validate_manifest(&manifest)
             .map_err(LoadError::ValidationFailed)?;
@@ -201,7 +199,9 @@ mod tests {
     #[test]
     fn test_missing_file_reports_not_found() {
         let loader = PackLoader::new();
-        let err = loader.load(Path::new("/nonexistent/nope.cvpack")).unwrap_err();
+        let err = loader
+            .load(Path::new("/nonexistent/nope.cvpack"))
+            .unwrap_err();
         assert!(matches!(err, LoadError::FileNotFound(_)), "got {err:?}");
     }
 

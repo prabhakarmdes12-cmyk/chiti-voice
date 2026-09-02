@@ -134,8 +134,14 @@ mod tests {
             u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]),
             36 + 8
         );
-        assert_eq!(u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]), 22050);
-        assert_eq!(u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]), 8);
+        assert_eq!(
+            u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]),
+            22050
+        );
+        assert_eq!(
+            u32::from_le_bytes([bytes[40], bytes[41], bytes[42], bytes[43]]),
+            8
+        );
     }
 
     #[test]
@@ -205,7 +211,11 @@ mod tests {
         // Canonical layout: RIFF(0..4) size(4..8) WAVE(8..12) "fmt "(12..16)
         // fmt-chunk 16..36, "data"(36..40) data-size(40..44), payload(44..).
         assert_eq!(&bytes[36..40], b"data");
-        assert_eq!(&bytes[40..44], &2u32.to_le_bytes(), "payload is one s16 sample");
+        assert_eq!(
+            &bytes[40..44],
+            &2u32.to_le_bytes(),
+            "payload is one s16 sample"
+        );
         assert_eq!(&bytes[44..46], [0u8, 0u8], "one silent sample");
         let _ = std::fs::remove_dir_all(&dir);
     }

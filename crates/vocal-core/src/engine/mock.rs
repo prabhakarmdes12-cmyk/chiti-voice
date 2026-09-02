@@ -115,10 +115,7 @@ impl crate::engine::VoiceEngine for MockEngine {
         })
     }
 
-    async fn stream(
-        &self,
-        request: &SynthesisRequest,
-    ) -> VoiceResult<crate::engine::AudioStream> {
+    async fn stream(&self, request: &SynthesisRequest) -> VoiceResult<crate::engine::AudioStream> {
         let request = request.clone();
         let sample_rate = self.sample_rate;
 
@@ -184,7 +181,7 @@ mod tests {
     fn test_generate_silence() {
         let engine = MockEngine::new();
         let silence = engine.generate_silence(1.0); // 1 second
-        // 1 second * 22050 samples/s * 4 bytes/sample (f32)
+                                                    // 1 second * 22050 samples/s * 4 bytes/sample (f32)
         let expected_bytes = 22050 * 4;
         assert_eq!(silence.len(), expected_bytes);
     }

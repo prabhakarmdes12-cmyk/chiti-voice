@@ -70,7 +70,10 @@ async fn voices_have_distinct_durations_for_distinct_lengths() {
         .await
         .unwrap();
     let kashi = engine
-        .synthesize(&SynthesisRequest::new("kashi-mock", "Namaste from Kashi, longer text"))
+        .synthesize(&SynthesisRequest::new(
+            "kashi-mock",
+            "Namaste from Kashi, longer text",
+        ))
         .await
         .unwrap();
 
@@ -151,9 +154,18 @@ async fn critical_evaluation_sentences_run_through_the_pipeline() {
     engine.initialize().await.unwrap();
 
     let cases = [
-        ("tara-mock", "Your appointment is confirmed for Thursday at three PM."),
-        ("tara-mock", "We'll be with you shortly — thank you for your patience."),
-        ("tara-mock", "The total amount due is twelve thousand five hundred rupees."),
+        (
+            "tara-mock",
+            "Your appointment is confirmed for Thursday at three PM.",
+        ),
+        (
+            "tara-mock",
+            "We'll be with you shortly — thank you for your patience.",
+        ),
+        (
+            "tara-mock",
+            "The total amount due is twelve thousand five hundred rupees.",
+        ),
         ("kashi-mock", "Your question is important."),
         ("kashi-mock", "Peace and patience are the true strength."),
     ];
@@ -205,10 +217,9 @@ fn pack_loader_errors_map_to_stable_codes() {
         voice_pack::LoadError::LimitExceeded("too big".to_string()).into();
     assert_eq!(err.code(), VoiceErrorCode::PackSizeExceeded);
 
-    let err: vocal_core::VoiceError = voice_pack::LoadError::ValidationFailed(
-        "Checksum mismatch for model.onnx".to_string(),
-    )
-    .into();
+    let err: vocal_core::VoiceError =
+        voice_pack::LoadError::ValidationFailed("Checksum mismatch for model.onnx".to_string())
+            .into();
     assert_eq!(err.code(), VoiceErrorCode::PackChecksumFailed);
 }
 
@@ -238,9 +249,29 @@ fn no_network_or_llm_clients_in_vocal_core() {
         .join("\n");
 
     const FORBIDDEN: &[&str] = &[
-        "reqwest", "hyper", "ureq", "awc", "surf", "isahc", "curl", "openssl", "rustls",
-        "native-tls", "openai", "anthropic", "elevenlabs", "eleven-labs", "azure", "aws-sdk",
-        "google-cloud", "polly", "huggingface", "hf-hub", "mockito", "wiremock", "httpc",
+        "reqwest",
+        "hyper",
+        "ureq",
+        "awc",
+        "surf",
+        "isahc",
+        "curl",
+        "openssl",
+        "rustls",
+        "native-tls",
+        "openai",
+        "anthropic",
+        "elevenlabs",
+        "eleven-labs",
+        "azure",
+        "aws-sdk",
+        "google-cloud",
+        "polly",
+        "huggingface",
+        "hf-hub",
+        "mockito",
+        "wiremock",
+        "httpc",
         "tungstenite",
     ];
 
@@ -255,7 +286,12 @@ fn no_network_or_llm_clients_in_vocal_core() {
     // Source-level backstop: no HTTP client use in src/, even transitively via a renamed dep.
     for entry in walk(concat!(env!("CARGO_MANIFEST_DIR"), "/src")) {
         let text = read(&entry);
-        for needle in ["reqwest::", "hyper::", "TcpStream::connect", "UnixStream::connect"] {
+        for needle in [
+            "reqwest::",
+            "hyper::",
+            "TcpStream::connect",
+            "UnixStream::connect",
+        ] {
             assert!(
                 !text.contains(needle),
                 "{entry} uses {needle:?}; the synthesis core must not open sockets"
@@ -296,7 +332,8 @@ fn pipeline_and_normalizer_are_honest_about_being_stubs() {
         "text normalization is documented as an unimplemented pass-through"
     );
 
-    let processed = futures_block_on(vocal_core::pipeline::SynthesisPipeline::new().process("hi", None));
+    let processed =
+        futures_block_on(vocal_core::pipeline::SynthesisPipeline::new().process("hi", None));
     assert_eq!(processed.unwrap(), "hi");
 }
 
