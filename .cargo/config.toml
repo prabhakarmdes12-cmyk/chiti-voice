@@ -1,0 +1,5 @@
+# TEMPORARY: diagnostic rustc wrapper so CI errors are readable through the checks API
+# (this sandbox cannot reach the Actions log host). Remove together with
+# scripts/ci-rustc-capture.sh once the workspace builds green.
+[build]
+rustc-wrapper = "/home/runner/work/chiti-voice/chiti-voice/scripts/ci-rustc-capture.sh"
