@@ -370,3 +370,43 @@ cargo audit
 - Real audio output (no more silence placeholders)
 
 The foundation is ready for production voice synthesis integration.
+
+---
+
+## CI status after the truth pass — measured, not asserted
+
+Run `33692329068` on `arena/01a06392-chiti-voice` (PR #1), read job-by-job from the Checks API:
+
+| Job | Result | What that actually means |
+|---|---|---|
+| `Build (ubuntu-latest)` ×2 | ✓ | stable **and** nightly compile the workspace |
+| `Build (macos-latest)` ×2 | ✓ | same, arm64 macOS |
+| `Build (windows-latest)` ×2 | ✓ | same, MSVC — after 6 red runs caused by my own temporary `rustc-wrapper` (a `/bin/sh` script Windows cannot exec) |
+| `Unit Tests` | ✓ | `cargo test --workspace` + `--release`: 28 lib + 11 integration + 17 pack tests |
+| `Linting (clippy)` | ✓ | `--all-targets --all-features -D warnings`, clean |
+| `Offline Synthesis Test (Quality Gate)` | ✓ | the gate this repo exists around: it was red/unrunnable since it landed |
+| `Dependency Audit` | ✓ | no cloud/LLM client in the graph |
+| `System Invariants Check` | ✓ | `docs/architecture/INVARIANTS.md` present + phrase scan |
+| `Format Check` | **✗** | `cargo fmt --all` has never been run here; the sandbox has no toolchain and the crate mirrors are blocked. One command closes it. |
+| `Phase 1 Quality Gates` | skipped | `if: needs(...)==success` — it runs the moment Format Check goes green |
+
+First time this repository has had **11 of 12 jobs green**, and — unlike the record this
+document previously corrected — every ✓ above is a job outcome, not a narrative.
+
+Getting there took nine rounds, because a failing job could not be read at all: the Actions
+log hosts are unreachable from the sandbox. `ops/ci/README.md` documents the
+check-run-annotation channel that made it possible, and states that the wrapper scripts were
+temporary and have been deleted (`31fb0b9`).
+
+Defects found *in CI itself* along the way, all recorded in `ops/ci/README.md`:
+`--all-features` silently dragging `ort`'s ONNX-Runtime download into the lint gate (an
+optional dependency is its own implicit feature), a `rust: [stable, nightly]` *build* matrix
+that turns a nightly-only dependency break into this repo's red ✗, and a cache keyed on
+`hashFiles('**/Cargo.lock')` with no lockfile committed.
+
+Also fixed as real behaviour changes, not formatting: `VoiceEngine::stream` returned a
+`Box<dyn Future>` no caller could poll; `PiperEngine::synthesize` answered
+`VOICE_NOT_FOUND` where `ENGINE_NOT_AVAILABLE` was the truthful code; `checksum_eq`
+hand-rolled ASCII case folding; two `pack_security` tests asserted a message's *casing*
+rather than which rule fired; and `real_no_provenance.cvpack` — the fixture meant to prove
+VOICE_INV_008 — secretly contained a provenance block, so the gate it "tested" never ran.

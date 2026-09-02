@@ -21,8 +21,8 @@ There is **No audible voice** in this repository. Concretely:
 | Is there a voice model? | **No.** `voice-packs/*/model.onnx` never existed; `dist/*.cvpack` contained a 36-byte placeholder and is labelled `status: "placeholder"`. |
 | Is there a CLI that works? | Partially: `list`, `status`, `verify`, `install` really work (they load and validate packs). `speak` runs the whole pipeline and writes a **silent** WAV. |
 | Is there an HTTP daemon or TypeScript SDK? | **No.** Both are specs in `docs/api/`, nothing more. |
-| Do the CI gates mean anything? | Not yet: the fixed gates are staged in `ops/ci/` and need `scripts/install-ci.sh`. The live workflow still contains the ones that cannot fail. |
-| Does it compile? | It should now. It did not: `Cargo.toml` declared an `examples/simple_speak.rs` that didn't exist, which failed manifest parsing for the *whole workspace*, and CI has been red since. That file now exists and the ONNX backend is behind an optional feature. |
+| Do the CI gates mean anything? | The ones that decide whether this code is usable, yes: `Unit Tests`, `Linting (clippy)`, `Dependency Audit`, `System Invariants` and `Offline Synthesis Test (Quality Gate)` all pass and fail on their merits. Two do not: the live job's `VOICE_INV_001 validated` line is an `echo` (the real `unshare -rn` isolation is staged in `ops/ci/` and still needs `scripts/install-ci.sh`), and `Format Check` is red because `cargo fmt --all` has never been run on this tree. |
+| Does it compile? | **Verified, yes** — `cargo build --workspace` is green on ubuntu, macOS and Windows, on both stable and nightly (run `33692329068`, 11 of 12 jobs). It previously did not: `Cargo.toml` declared an `examples/simple_speak.rs` that did not exist, which failed manifest parsing for the *whole workspace*, and CI had been red since the workflow landed. |
 
 Earlier revisions of this README, `PHASE1_COMPLETE.md` and `AGENTS.md` described Phase 1
 as complete, all exit criteria passed, three voices loading, and a TypeScript SDK
