@@ -39,3 +39,48 @@ resolve, and text files are clean UTF-8).
 One job is deliberately `continue-on-error`: "real model readiness", because there is no
 model in this repo yet and a hard gate would keep CI permanently red. It surfaces as a
 visible warning with the reason. Make it blocking in the PR that lands the first real model.
+
+
+## Three more defects confirmed while making the workspace compile (2026-09-03)
+
+These were found by watching real runs, not by reading the YAML, so they are recorded here
+with the mechanism that makes them bite.
+
+1. **`--all-features` in a lint job is not "more coverage", it is a different build.**
+   Because `ort` was declared `optional = true`, cargo created an implicit `ort` feature,
+   so `cargo clippy --all-targets --all-features` enabled it and ran its `download-binaries`
+   build script. That job then failed *inside a dependency*, in ~15 s, having compiled none
+   of this workspace — meaning it could neither lint our code nor explain itself. The fix is
+   not to pass `--all-features`; name the features you mean (see the `clippy (piper feature)`
+   step). Long term: when inference lands, either vendor ONNX Runtime or declare
+   `ort = { default-features = false, features = ["load-dynamic"] }` so no build step needs
+   a network, and only then is `--all-features` safe to use.
+
+2. **A `rust: [stable, nightly]` matrix as a *build gate* makes other people's regressions
+   yours.** Six build jobs, two per OS; a nightly-only break in a transitive dependency turns
+   the repo's own gate red with nothing in this workspace to change. Nightly is a useful
+   heads-up and a terrible blocker: this workflow builds/tests on stable, and if nightly
+   coverage is wanted it belongs in a `continue-on-error` advisory job, like the "real model
+   readiness" one already here.
+
+3. **`actions/cache@v3` keyed on `hashFiles('**/Cargo.lock')` with no committed lockfile
+   produces a constant key**, so the cache is a stale grab-bag shared by every branch and
+   every toolchain — which is also how a "green" build can hide a cold-cache failure. Keep
+   the key on the lockfile *and* commit the lockfile (`cargo generate-lockfile` on a
+   networked machine), and include `matrix.rust` in the key if nightly ever comes back.
+
+## Why some debugging commits in this branch look strange
+
+This repository's CI logs were unreadable from the auditing environment: the log endpoints
+(`results-receiver.actions.githubusercontent.com`, `objects.githubusercontent.com`) are
+network-blocked there, so `gh run view --log` cannot fetch output, and check-run
+**annotations** were the only channel back. `scripts/ci-rustc-capture.sh`,
+`scripts/ci-test-capture.sh` and `scripts/ci-rustdoc-capture.sh` are wrappers that turn
+rustc/clippy/test-binary failures into `::error::` annotations for exactly that purpose; the
+first two were wired up through `.cargo/config.toml`.
+
+They are **scaffolding, not product**: `build.rustc-wrapper` makes non-POSIX platforms fail to
+build at all, and a wrapper that mishandles concurrent invocations will corrupt cargo's JSON
+diagnostics (it did: a shared /tmp file turned a healthy workspace into eight silent
+101-exit jobs). They must not survive — see the "remove the CI diagnostics" commit. If you
+need them again, copy them back from history, use them for one push, and delete them.

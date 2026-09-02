@@ -196,6 +196,12 @@ jobs:
         run: cargo fmt --all -- --check
       - name: clippy (default features)
         run: cargo clippy --workspace --all-targets -- -D warnings
+      # NOT `--all-features`, and that is load-bearing. An optional dependency implicitly
+      # becomes a feature of the same name, so --all-features enables `ort` even when no
+      # named feature asks for it — and ort's default features run a build script that
+      # downloads prebuilt ONNX Runtime. The live workflow does exactly this, which is why
+      # its "Linting (clippy)" job dies inside a dependency and reports zero diagnostics
+      # for this workspace. Feature sets are named explicitly here instead.
       - name: clippy (piper feature)
         run: cargo clippy --workspace --all-targets --features vocal-core/piper -- -D warnings
 

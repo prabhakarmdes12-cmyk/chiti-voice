@@ -17,6 +17,7 @@ There is **No audible voice** in this repository. Concretely:
 | Question | Answer today |
 |---|---|
 | Can it speak? | **No.** `MockEngine` emits digital silence; `PiperEngine` returns `ENGINE_NOT_AVAILABLE`. `vocal_core::REAL_SYNTHESIS_AVAILABLE == false`. |
+| Is there anything to listen to? | Only direction-setting audio: `assets/persona-auditions/` has one ~23 s synthetic reference clip per persona (input to ROADMAP path B/C — see [`docs/ROADMAP_EMBEDDED.md`](./docs/ROADMAP_EMBEDDED.md) §5.1). Nothing in `crates/` consumes it. |
 | Is there a voice model? | **No.** `voice-packs/*/model.onnx` never existed; `dist/*.cvpack` contained a 36-byte placeholder and is labelled `status: "placeholder"`. |
 | Is there a CLI that works? | Partially: `list`, `status`, `verify`, `install` really work (they load and validate packs). `speak` runs the whole pipeline and writes a **silent** WAV. |
 | Is there an HTTP daemon or TypeScript SDK? | **No.** Both are specs in `docs/api/`, nothing more. |

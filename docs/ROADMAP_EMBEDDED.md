@@ -218,7 +218,7 @@ resolves to one of three things, with very different costs:
 | Path | What you get | Cost | Notes |
 |---|---|---|---|
 | **A. Adopt an existing open voice** | A real, offline, working persona today (e.g. a Piper `en-IN`/`en-GB` voice; Kokoro/Pocket voices for better quality) | days | Fastest. But it is *their* voice, not your brand voice, and "Tara" becomes a label on someone else's timbre. Verify each model card (§3). |
-| **B. Clone/fine-tune toward a target** | A persona that sounds like a reference speaker | weeks + GPU | Pocket TTS clones from a very short reference under MIT [8](https://getstream.io/blog/best-on-device-tts-models/) — the cheapest legitimate route to a distinctive voice. Kokoro fine-tuning is Apache-2.0-friendly. Model size/latency then follow the base model, i.e. T1 tier, not a toy. |
+| **B. Clone/fine-tune toward a target** | A persona that sounds like a reference speaker (**reference clips exist now:** `assets/persona-auditions/*.wav`, 22.9–24.2 s mono 24 kHz — see §5.1) | weeks + GPU | Pocket TTS clones from a very short reference under MIT [8](https://getstream.io/blog/best-on-device-tts-models/) — the cheapest legitimate route to a distinctive voice. Kokoro fine-tuning is Apache-2.0-friendly. Model size/latency then follow the base model, i.e. T1 tier, not a toy. |
 | **C. Commission a speaker + train** | Ownable, consistent, licensable brand voice; satisfies INV_008 properly (consent contract, terms of use, term length, territory) | months + money + a dataset pipeline | The only path that yields a *product asset* you can license onward — which is what a `.cvpack` business model presumes. |
 
 **The constraint on this workspace:** I cannot complete Step 1 for you *inside this
@@ -231,6 +231,28 @@ decided today. Choose the direction, then A gets you speaking this week while B/
 commissioned in parallel.
 
 ---
+
+### 5.1 Reference audio that already exists (2026-09-03)
+
+`assets/persona-auditions/` holds one ~23 s clip per persona (tara, kashi, bobo), with
+measured properties and checksums in its README. They were produced by a third-party
+text-to-speech service, so they are:
+
+* **usable as path B input** — zero-shot cloners take a few seconds of reference and imitate
+  the timbre; 23 s is more than enough, and each clip already covers that persona's intent
+  profiles (warm/greeting/alert/calm for Tara, calm/guidance/knowledge for Kashi,
+  excited/playful/encouraging/calm for Bobo);
+* **usable as path C's brief** — the thing to hand an actor and say "this, but yours";
+* **not** a `.cvpack`, not a model, not loadable by anything in `crates/`, and not evidence
+  that `REAL_SYNTHESIS_AVAILABLE` should be true;
+* **not a licensable voice asset.** A machine-generated performance gives no actor contract to
+  point at and, in most jurisdictions, weak grounds for an exclusive right in the *timbre*
+  itself; the rendering model's own terms also govern the output. If the product needs a voice
+  it can license to others, path C is the only one of the three that produces that.
+
+Re-render rather than overwrite if a different take is wanted, so the checksums stay
+meaningful.
+
 
 ## 6. Known gaps deliberately left open by this commit
 
