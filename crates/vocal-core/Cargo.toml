@@ -51,6 +51,7 @@ voice-pack = { path = "../voice-pack" }
 # ONNX Runtime / sets ort = { default-features = false, features = ["load-dynamic"] }).
 
 [dev-dependencies]
+serde_json.workspace = true # kokoro_reference.rs reads tests/fixtures/kokoro/reference.json
 # NOTE: no HTTP-mocking library here on purpose. vocal-core must not gain a network
 # client even for tests; `mockito` was declared but never used and was removed.
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -43,3 +43,7 @@ voice-packs/**/*.onnx.data
 *.key
 *.pem
 /signing/
+
+# Model assets fetched by scripts/fetch-offline-model.py (88 MB+ weights never belong in git;
+# the .cvpack format exists so model bytes travel beside a manifest, not in history)
+models/

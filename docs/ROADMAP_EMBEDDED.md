@@ -42,6 +42,26 @@ your real hardware before committing, but the relative ordering is what matters)
 | KittenTTS Nano (int8) | 42 MB | 320 MB | **10,483 ms** | **no** | Apache-2.0 (see §3) |
 | Picovoice Orca | 7 MB | 41 MB | 106 ms | yes | **proprietary/commercial** |
 
+### Measured in this repo, not quoted (2026-09-03)
+
+[`docs/research/KOKORO_OFFLINE_SPIKE.md`](./research/KOKORO_OFFLINE_SPIKE.md) synthesised real speech
+with the actual graph, in the sandbox, from weights pulled off npm because Hugging Face is
+blocked here. Against a model *in this family* (int8 Kokoro-82M, 88.1 MiB, vocoder fused into
+the graph, 24 kHz mono):
+
+| Item | Measured | Against the table above |
+|---|---|---|
+| Model size | 88.1 MiB (int8 export) | the blog's 341 MB is the fp32 Kokoro export — quantisation is ~4×, and it is *free* to adopt |
+| Peak RSS | 284 MiB (Python, one thread) / 334 MiB (with the G2P model too) | "2.0 GB" is the fp32 Python story; a Rust/`ort` build should be nearer the model size, but that number is still unmeasured on a board |
+| RTF, 1 thread, nproc=2 | 1.79 (en) · 1.86 (en, permissive G2P) · 2.35 (hi) | >1 ⇒ **not** real-time on a single modest core; sentence-at-a-time, not stream-and-play |
+| Session load | 0.57–0.75 s | matters for a robot that boots cold |
+| Graph contract | `input_ids` i64[1,L] + `style` f32[1,256] + `speed` f32[1] → `waveform` f32[1,N] | **no separate vocoder session** — Step 1's two-session plan collapses to one for this export |
+| Voice asset | 522,240 B = 510 × 256 f32 per speaker | a *persona* is 0.5 MB; the model is shared. See §5 |
+| Output level varies by voice | peak 0.50 (af_heart) → 0.99 (hf_alpha), same graph | a device player needs loudness normalisation; 0.99 is one hot voice from clipping |
+
+Two of those change the design immediately: the fused vocoder (less to port) and the per-voice
+peak spread (a required post-stage, not an optional one).
+
 Quality context from the same survey of public comparisons
 [5](https://www.promptquorum.com/power-local-llm/local-tts-voice-cloning-piper-coqui-xtts),
 [2](https://picovoice.ai/blog/on-device-tts/):
@@ -98,6 +118,11 @@ Compilable workspace, honest docs, `REAL_SYNTHESIS_AVAILABLE`, enforced pack lim
 `docs-truth` CI gate. Exit: `cargo build --workspace --all-targets` green; CI green.
 
 **Step 1 — ONE real sentence of audio (days, not quarters).**
+*Status 2026-09-03: unblocked and specified — the sentence exists (see the spike doc and
+`assets/offline-spike/`), the graph contract and voice layout are pinned by
+`crates/vocal-core/tests/fixtures/kokoro/` + `kokoro_reference.rs`, and `--features piper`
+has a measured target. What remains is the Rust `ort` call itself, which needs a machine
+with crates.io.*
 Accept `ADR-001` (Piper for T0). Then, in `PiperEngine` behind `--features piper`:
 1. `ort::Environment` + `Session` load from bytes already in the `.cvpack` (never a path
    fetch — `fetch-models` stays off; it is now removed from the workspace manifest).
@@ -160,11 +185,22 @@ whole plan rather than a line item.
   [3](https://huggingface.co/agentvibes/piper-custom-voices). "Apache 2.0", which the
   placeholder manifests in this repo previously asserted for a file that did not exist, is
   not a safe default and has been removed.
+- **The wheel, not just the tool.** Measured: `piper-tts` 1.7.0's own packaging metadata says
+  `License: GPL-3.0-or-later` and ships `espeak-ng-data` (125 entries) inside the wheel — so
+  "Piper is MIT" is true of the engine and false of the artifact you would install. Same for
+  the phonemiser in any stack that bundles espeak's data. **The phonemiser is the copyleft
+  boundary in this product, not the ONNX graph.**
 - **espeak-ng = GPL-3.0.** Piper uses it for phonemization/G2P. Shipping it *inside* a
   proprietary distributed binary is the classic way to acquire a source-disclosure
   obligation for your own binary. Options, in order of cleanliness: (a) use a non-GPL G2P
-  path (KittenTTS 0.8 uses its own learned G2P; Kokoro's English path uses `misaki` — both
-  need independent verification), (b) ship espeak-ng as a separate process/package with its
+  path — **now measured, not speculated:** `expo-open-phonemizer@1.0.1` (MIT) pairs a
+  274,927-entry `en_us` lexicon with a 61 MB char-level G2P graph, and
+  `scripts/extract-open-phonemizer.py` + `scripts/spike-kokoro-offline.py --phonemizer open`
+  synthesise a sentence through it with no GPL component in the path. Its limits are real and
+  stated: `en_us` only (so `hi` still needs espeak-ng or our own G2P), no licence stated for
+  the weights inside the tarball, and it mispronounces out-of-lexicon proper nouns —
+  "Chiti" came out `tʃˈaːɾi`. KittenTTS 0.8's learned G2P and Kokoro's `misaki` route still
+  need the same independent verification,), (b) ship espeak-ng as a separate process/package with its
   own license boundary, (c) accept GPL for that component and structure accordingly. **Make
   this a written decision in `ADR-002` before Step 1 finishes.** Note the same trap exists
   for KittenTTS's *reference Python package*, which has been reported to pull GPL-3.0
@@ -218,12 +254,16 @@ resolves to one of three things, with very different costs:
 | Path | What you get | Cost | Notes |
 |---|---|---|---|
 | **A. Adopt an existing open voice** | A real, offline, working persona today (e.g. a Piper `en-IN`/`en-GB` voice; Kokoro/Pocket voices for better quality) | days | Fastest. But it is *their* voice, not your brand voice, and "Tara" becomes a label on someone else's timbre. Verify each model card (§3). |
+| **B′. Derive a style vector** (Kokoro-class engines only) | A new persona as a **522 KB** style matrix (510 × 256 f32) against the shared 88 MB graph — which is also why one device can carry the whole roster | days–weeks, one GPU session | Added after the spike, because it changes this table's premise: for this engine family a *voice* is not a model. Caveat found while reading the reference code: the style row is selected by utterance length, so prosody depends on how the daemon chunks sentences (§2 Step 3). Interpolating two existing vectors is cheap and yields a "new" timbre, but it is a blend, not a speaker — say so in any manifest. |
 | **B. Clone/fine-tune toward a target** | A persona that sounds like a reference speaker (**reference clips exist now:** `assets/persona-auditions/*.wav`, 22.9–24.2 s mono 24 kHz — see §5.1) | weeks + GPU | Pocket TTS clones from a very short reference under MIT [8](https://getstream.io/blog/best-on-device-tts-models/) — the cheapest legitimate route to a distinctive voice. Kokoro fine-tuning is Apache-2.0-friendly. Model size/latency then follow the base model, i.e. T1 tier, not a toy. |
 | **C. Commission a speaker + train** | Ownable, consistent, licensable brand voice; satisfies INV_008 properly (consent contract, terms of use, term length, territory) | months + money + a dataset pipeline | The only path that yields a *product asset* you can license onward — which is what a `.cvpack` business model presumes. |
 
-**The constraint on this workspace:** I cannot complete Step 1 for you *inside this
-sandbox*, because `crates.io` and `huggingface.co` are both unreachable here (PyPI and GitHub
-work). So no Rust build verification and no model download. What is possible from here:
+**The constraint on this workspace** (updated by the spike): `crates.io` is still
+unreachable, so **there is still no Rust build verification from here** — that part is
+unchanged and is why `crates/` cannot speak yet. But *"no model download"* was false: the
+npm registry mirrors the weights, so a measured contract, a reference fixture and four
+listen-test clips could be produced here after all. Re-read that as a lesson about this
+repo's habit of accepting a blocker as given. What is possible from here:
 writing and statically reviewing the ONNX/phonemization code, all the pack/CI/docs/tooling
 work (done), and producing **audition audio to fix the persona direction** — which is the
 prerequisite for both B and C, and is the part of "generate the voice" that can actually be
@@ -267,6 +307,13 @@ meaningful.
 - No audio-device playback in the CLI (`rodio` etc. not added: dependency bar in `AGENTS.md`).
 - `Cargo.lock` is still absent — it must be generated on a machine with crates.io access and
   committed. CI's `supply-chain` job now fails if it is missing.
+- `.cvpack` cannot express what the measured engines need: a 115-symbol tokenizer table, a
+  510 × 256 style matrix, a chunking policy (style row is picked *by utterance length*), and a
+  `pronunciation_overrides` map for proper nouns. Spec amendment first, then the Rust types —
+  not the other way round.
+- No output-level normalisation anywhere, and the spike says it is needed: peak ranged
+  0.50–0.99 across voices on the same sentence. One hot voice plus a device volume at max is
+  clipping.
 - `MOCK` engine's silence-as-valid-audio design invites exactly the false-completeness this
   repo had. Consider making `MockEngine` refuse unless `#[cfg(test)]` or an explicit
   `--allow-silence`, and deleting the "produces audio" framing from all future docs.

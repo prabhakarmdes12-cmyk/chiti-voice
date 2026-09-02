@@ -17,7 +17,7 @@ There is **No audible voice** in this repository. Concretely:
 | Question | Answer today |
 |---|---|
 | Can it speak? | **No.** `MockEngine` emits digital silence; `PiperEngine` returns `ENGINE_NOT_AVAILABLE`. `vocal_core::REAL_SYNTHESIS_AVAILABLE == false`. |
-| Is there anything to listen to? | Only direction-setting audio: `assets/persona-auditions/` has one ~23 s synthetic reference clip per persona (input to ROADMAP path B/C — see [`docs/ROADMAP_EMBEDDED.md`](./docs/ROADMAP_EMBEDDED.md) §5.1). Nothing in `crates/` consumes it. |
+| Is there anything to listen to? | Two kinds, and only one of them is product-direction audio. `assets/offline-spike/` holds four utterances synthesised **for real, offline**, by `scripts/spike-kokoro-offline.py` against a genuine int8 Kokoro graph — measured in [`docs/research/KOKORO_OFFLINE_SPIKE.md`](./docs/research/KOKORO_OFFLINE_SPIKE.md), and they are the first audio this repo has ever produced that a person can judge. `assets/persona-auditions/` keeps the ~23 s per-persona reference clips for ROADMAP path B/B′/C (§5.1). **Nothing in `crates/` can speak yet**: `REAL_SYNTHESIS_AVAILABLE` is `false`, and the spike's contract is now pinned in `crates/vocal-core/tests/fixtures/kokoro/` so the Rust engine has something to be graded against. |
 | Is there a voice model? | **No.** `voice-packs/*/model.onnx` never existed; `dist/*.cvpack` contained a 36-byte placeholder and is labelled `status: "placeholder"`. |
 | Is there a CLI that works? | Partially: `list`, `status`, `verify`, `install` really work (they load and validate packs). `speak` runs the whole pipeline and writes a **silent** WAV. |
 | Is there an HTTP daemon or TypeScript SDK? | **No.** Both are specs in `docs/api/`, nothing more. |
