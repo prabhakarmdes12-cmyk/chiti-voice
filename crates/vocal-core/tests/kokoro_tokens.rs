@@ -81,7 +81,14 @@ fn constants_match_the_measured_graph() {
         tok["config"]["model_max_length"].as_u64().unwrap() as usize,
         MAX_TOKENS
     );
-    assert!(MAX_ID > 115, "ids must stay sparse or the comment in phoneme_tokens.rs needs fixing");
+    // Compared against the *fixture's* symbol count rather than a literal, so this is a real
+    // check on the data (and not an assertion about two constants, which clippy rejects as
+    // something that cannot fail).
+    let symbols: Value = serde_json::from_str(&fs::read_to_string(fixture("tokenizer.json")).unwrap()).unwrap();
+    let vocab_len = symbols["model"]["vocab"].as_object().map(|m| m.len()).unwrap();
+    assert!(MAX_ID as usize > vocab_len,
+        "ids must stay sparse (largest id {} vs {} symbols) or the table comment in phoneme_tokens.rs is stale",
+        MAX_ID, vocab_len);
 }
 
 /// The whitelist-vs-vocab equivalence, checked on the observable side: the reference phoneme

@@ -137,7 +137,8 @@ mod tests {
     fn table_is_sparse_exactly_as_documented() {
         let used = SYMBOLS.iter().filter(|c| **c != '\0').count();
         assert_eq!(used, 115, "the measured vocab is 115 symbols");
-        assert_eq!(SYMBOLS.len(), MAX_ID as usize + 1, "sized by largest id, not by count");
+        let (len, max_id) = (SYMBOLS.len(), MAX_ID as usize);
+        assert_eq!(len, max_id + 1, "sized by largest id, not by count");
         assert_eq!(SYMBOLS[PAD as usize], '$');
         assert!(used < SYMBOLS.len(), "if the ids ever become dense, the comment above is a lie");
         assert!(id_for('\u{26a1}').is_none(), "a symbol outside the vocab must not map");

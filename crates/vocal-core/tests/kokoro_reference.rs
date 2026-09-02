@@ -37,6 +37,12 @@ fn reference() -> Value {
     serde_json::from_str(&text).expect("reference.json must parse")
 }
 
+/// Integer fields of the fixture. The JSON holds numbers as `f64`, and the two casts that
+/// follow are the only place this file turns them back into integers.
+fn int(v: &Value, key: &str) -> u64 {
+    num(v, key) as u64
+}
+
 fn num(v: &Value, key: &str) -> f64 {
     v.get(key)
         .and_then(Value::as_f64)
@@ -60,9 +66,9 @@ fn graph_contract_is_pinned() {
     let mut names: Vec<&str> = inputs.keys().map(String::as_str).collect();
     names.sort_unstable();
     assert_eq!(names, vec!["input_ids", "speed", "style"], "the ONNX I/O contract changed");
-    assert_eq!(num(engine, "sample_rate") as u32, 24000);
-    assert_eq!(num(engine, "style_dim") as u32, 256);
-    assert_eq!(num(engine, "max_phoneme_units") as u32, 510);
+    assert_eq!(int(engine, "sample_rate"), 24000);
+    assert_eq!(int(engine, "style_dim"), 256);
+    assert_eq!(int(engine, "max_phoneme_units"), 510);
     assert!(ustr(engine, "output").contains("waveform"), "model must return waveform, i.e. PCM already: this export has no separate vocoder graph to feed");
 }
 
@@ -72,9 +78,9 @@ fn graph_contract_is_pinned() {
 #[test]
 fn voice_vector_is_exactly_rows_of_style_dim() {
     let r = reference();
-    let bytes = num(&r["voice"], "bytes") as u64;
-    let style_dim = num(&r["engine"], "style_dim") as u64;
-    let rows = num(&r["engine"], "max_phoneme_units") as u64;
+    let bytes = int(&r["voice"], "bytes");
+    let style_dim = int(&r["engine"], "style_dim");
+    let rows = int(&r["engine"], "max_phoneme_units");
     assert_eq!(bytes, rows * style_dim * 4, "a Kokoro voice vector is {rows} rows of {style_dim} f32");
 }
 
@@ -87,7 +93,7 @@ fn phoneme_ids_are_wrapped_truncated_and_in_vocab() {
     let req = &r["request"];
     let ids: Vec<u64> = req["input_ids"].as_array().expect("`request.input_ids` must be an array")
         .iter().map(|v| v.as_u64().expect("ids must be integers")).collect();
-    let n_tokens = num(req, "n_tokens") as usize;
+    let n_tokens = int(req, "n_tokens") as usize;
 
     assert_eq!(ids.len(), n_tokens + 2, "expected `$ seq $`");
     assert_eq!(ids.first().copied(), Some(0));
@@ -106,7 +112,7 @@ fn phoneme_ids_are_wrapped_truncated_and_in_vocab() {
     assert!(ids.iter().all(|id| vocab.contains(id)),
         "an id outside the vocab's value set means the unknown-token path fired");
     assert!(upper < 256, "ids fit a u8 index table ({upper} is the largest) — if that changes, so does the pack format");
-    assert_eq!(num(&tok["config"], "model_max_length") as u32, 512);
+    assert_eq!(int(&tok["config"], "model_max_length"), 512);
 }
 
 /// Read the WAV the way `crates/vocal-core/src/wav.rs` writes it, and check the header against
@@ -130,9 +136,15 @@ fn committed_audio_and_committed_numbers_describe_each_other() {
     assert_eq!((rate, channels, bits), (24000, 1, 16), "reference must be 24 kHz mono PCM16");
 
     let payload = &bytes[44..44 + data_len];
-    let samples: Vec<i16> = payload.chunks_exact(2).map(|b| i16::from_le_bytes([b[0], b[1]])).collect();
-    assert_eq!(samples.len() as u64, num(&r["expected"], "samples") as u64);
-    assert_eq!(payload.len() % 2, 0, "no trailing partial sample in the reference");
+    let samples: Vec<i16> = payload
+        .chunks_exact(2)
+        .map(|b| i16::from_le_bytes(b.try_into().unwrap()))
+        .collect();
+    assert_eq!(int(&r["expected"], "samples") as usize, samples.len());
+    // Whole-number-of-samples stated as an equality rather than `payload.len() % 2 == 0`:
+    // clippy's `manual_is_multiple_of` rejects the modulo, and this repo lints with
+    // `-D warnings`, so the idiomatic form is the one that builds.
+    assert_eq!(payload.len(), samples.len() * 2, "no trailing partial sample in the reference");
 
     let sum_sq: f64 = samples.iter().map(|&s| (f64::from(s) / 32768.0).powi(2)).sum();
     let rms = (sum_sq / samples.len() as f64).sqrt();
