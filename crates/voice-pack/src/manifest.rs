@@ -36,6 +36,14 @@ pub struct PackManifest {
     /// Provenance information
     #[serde(default)]
     pub provenance: Option<ProvenanceInfo>,
+    /// Build status of the pack's model assets.
+    ///
+    /// `"placeholder"` means the declared model files are stand-ins (this is how
+    /// Phase 1 shipped) and the pack therefore CANNOT synthesize audio. Anything
+    /// else — including `None` — is treated as a real, release-intended pack and
+    /// is held to the full provenance requirements.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
 }
 
 /// File entry in the manifest
@@ -112,6 +120,11 @@ pub struct ProvenanceInfo {
 }
 
 impl PackManifest {
+    /// True when this pack ships placeholder assets instead of a real model.
+    pub fn is_placeholder(&self) -> bool {
+        matches!(self.status.as_deref(), Some("placeholder"))
+    }
+
     /// Validate the manifest structure
     pub fn validate(&self) -> Result<(), String> {
         // Check required fields
@@ -157,6 +170,7 @@ mod tests {
             }],
             persona: None,
             provenance: None,
+            status: None,
         };
 
         assert!(manifest.validate().is_ok());
@@ -178,6 +192,7 @@ mod tests {
             files: vec![],
             persona: None,
             provenance: None,
+            status: None,
         };
 
         assert!(manifest.validate().is_err());

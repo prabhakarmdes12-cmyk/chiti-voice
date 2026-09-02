@@ -5,7 +5,7 @@
 
 use crate::engine::VoiceCapabilities;
 use crate::error::{VoiceErrorCode, VoiceResult};
-use crate::synthesis::{AudioMetadata, SynthesisFormat, SynthesisRequest, SynthesisResponse};
+use crate::synthesis::{SynthesisRequest, SynthesisResponse};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -93,13 +93,17 @@ impl crate::engine::VoiceEngine for PiperEngine {
     }
 
     async fn health(&self) -> VoiceResult<crate::engine::EngineHealth> {
-        // TODO: Check ONNX Runtime availability
+        // Deliberately never reports Healthy: there is no ONNX inference path in
+        // this engine yet, so a "Healthy" status would be a lie that applications
+        // would build against.
         if self.voices.is_empty() {
-            Ok(crate::engine::EngineHealth::Degraded(
+            Ok(crate::engine::EngineHealth::Unhealthy(
                 "No voices registered".to_string(),
             ))
         } else {
-            Ok(crate::engine::EngineHealth::Healthy)
+            Ok(crate::engine::EngineHealth::Unhealthy(
+                "Piper backend not implemented: voices are registered but no audio                  can be synthesized (ONNX inference pending)".to_string(),
+            ))
         }
     }
 
@@ -123,20 +127,22 @@ impl crate::engine::VoiceEngine for PiperEngine {
 
     async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse> {
         // Validate voice
-        let _config = self
-            .get_voice_config(&request.voice)
-            .ok_or_else(|| {
-                crate::error::VoiceError::new(
-                    VoiceErrorCode::VoiceNotFound,
-                    format!("Voice not found: {}", request.voice),
-                )
-            })?;
+        self.get_voice_config(&request.voice).ok_or_else(|| {
+            crate::error::VoiceError::new(
+                VoiceErrorCode::VoiceNotFound,
+                format!("Voice not found: {}", request.voice),
+            )
+        })?;
 
-        // TODO: Run ONNX model inference
-        // For now, return error to indicate not yet implemented
+        // NOT IMPLEMENTED. ONNX inference is not wired up: the `ort` and `ndarray`
+        // dependencies are optional (behind the `piper` cargo feature) and are
+        // referenced by no code in this crate. Until that lands, this engine can
+        // validate voices but cannot produce audio, and must say so loudly rather
+        // than returning silence that looks like success.
+        // See docs/ROADMAP_EMBEDDED.md ("Phase 2: real audio") for the plan.
         Err(crate::error::VoiceError::new(
-            VoiceErrorCode::SynthesisFailed,
-            "Piper synthesis not yet implemented (ONNX integration pending)",
+            VoiceErrorCode::EngineNotAvailable,
+            "Piper synthesis is not implemented: no ONNX inference path exists yet              (enable --features piper and implement OrtSession run; see docs/ROADMAP_EMBEDDED.md)",
         ))
     }
 
@@ -144,10 +150,9 @@ impl crate::engine::VoiceEngine for PiperEngine {
         &self,
         _request: &SynthesisRequest,
     ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>> {
-        // TODO: Implement streaming synthesis
         Err(crate::error::VoiceError::new(
-            VoiceErrorCode::SynthesisFailed,
-            "Piper streaming not yet implemented",
+            VoiceErrorCode::EngineNotAvailable,
+            "Piper streaming is not implemented: no ONNX inference path exists yet",
         ))
     }
 
@@ -196,10 +201,7 @@ mod tests {
     async fn test_piper_health() {
         let engine = PiperEngine::new();
         let health = engine.health().await.unwrap();
-        assert!(matches!(
-            health,
-            crate::engine::EngineHealth::Degraded(_)
-        ));
+        assert!(matches!(health, crate::engine::EngineHealth::Unhealthy(_)));
     }
 
     #[tokio::test]

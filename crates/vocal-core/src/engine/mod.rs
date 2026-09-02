@@ -48,7 +48,7 @@ pub enum EngineHealth {
 ///
 /// All backend implementations (Piper, Kokoro, etc.) must implement this trait.
 /// This design ensures that applications never depend directly on a specific backend.
-#[async_trait::async_trait]
+#[async_trait]
 pub trait VoiceEngine: Send + Sync {
     /// Initialize the engine (load models, allocate memory, etc.)
     async fn initialize(&mut self) -> VoiceResult<()>;

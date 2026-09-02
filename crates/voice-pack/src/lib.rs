@@ -12,6 +12,6 @@ pub mod manifest;
 pub mod security;
 
 pub use format::VoicePack;
-pub use loader::PackLoader;
-pub use manifest::{PackManifest, PersonaConfig, IntentProfile};
-pub use security::PackValidator;
+pub use loader::{LoadError, LoadResult, PackLoader, MANIFEST_ENTRY};
+pub use manifest::{PackFile, PackManifest, PersonaConfig, IntentProfile, ProvenanceInfo};
+pub use security::{declared_paths, PackLimits, PackValidator};

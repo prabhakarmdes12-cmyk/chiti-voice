@@ -1,0 +1,84 @@
+# ⚠️ LEGAL REVIEW REQUIRED — DRAFT, NOT LEGAL ADVICE
+#
+# Before this file is used in earnest, a human must confirm:
+#   1. The correct legal entity name and jurisdiction (README says "Chiti
+#      Technologies"; Cargo.toml says authors = ["Chiti Technologies"]; no
+#      registration evidence exists in this repo). If you are an individual,
+#      use your own name — an entity that does not exist cannot hold copyright.
+#   2. The year of first publication.
+#   3. THIRD-PARTY OBLIGATIONS (see THIRD_PARTY_NOTICES section at the bottom).
+#      A proprietary notice does NOT override upstream licenses. Several of the
+#      licenses involved here are copyleft and/or non-commercial.
+#
+# Until (1)-(3) are settled, treat this repository as UNLICENSED for outside
+# parties (the default under most jurisdictions: all rights reserved, no grant).
+# =============================================================================
+
+Chiti Vocal Runtime — Proprietary Software License
+
+Copyright (c) 2026 Chiti Technologies. All rights reserved.
+
+## 1. No Grant
+
+This software, its source code, documentation, voice pack manifests, and all
+Chiti-original assets are the property of Chiti Technologies and are protected
+by copyright and other intellectual property laws.
+
+No license is granted by this file. You may not copy, modify, distribute,
+sublicense, sell, or use this software for any purpose except as expressly
+authorized in a separate written agreement signed by Chiti Technologies.
+
+Any internal use by Chiti personnel and any contractor work performed under a
+signed agreement is permitted, subject to the third-party obligations in
+section 4.
+
+## 2. Voice Packs (`.cvpack`) — Separately Licensed
+
+A `.cvpack` container is not covered by section 1 to the extent it embeds
+third-party model weights or training data. Each pack carries its own
+`license`, `provenance.model_license`, `provenance.dataset_attribution`, and
+`provenance.consent_obtained` fields.
+
+Those fields are **declarations of fact about the enclosed model**. They must
+be copied from, and verified against, the actual upstream model card and the
+actual speaker/consent documentation at the moment the model is added.
+
+> A `.cvpack` whose provenance block does not match the reality of its
+> embedded model is a liability, not a formality. Packs must not ship with
+> placeholder, inferred, or aspirational provenance.
+
+## 3. Contributions
+
+Contributions are accepted only under a signed Contributor License Agreement
+that permits relicensing and dual-licensing by Chiti Technologies. No external
+contributor program exists yet; see `docs/CONTRIBUTING_INTERNAL.md` (not yet
+written — tracked as a gap).
+
+## 4. THIRD_PARTY_NOTICES — verify before any release or redistribution
+
+These are load-bearing for a proprietary, commercial, redistributable runtime.
+Each item below MUST be re-verified against upstream by a human before a public
+release, and MUST be reproduced in a shipped notice file.
+
+| Component | Role | License (verify) | Why it matters here |
+|-----------|------|------------------|---------------------|
+| ONNX Runtime | inference backend (`ort` crate) | MIT | Permissive; attribution required. |
+| `ort` / `ort-sys` | Rust bindings | MIT / Apache-2.0 | Permissive. |
+| Piper (engine + Python tooling) | candidate TTS backend | MIT | Engine code is fine for commercial use. |
+| **espeak-ng** | **Piper's phonemization / G2P backend** | **GPL-3.0** | **Copyleft. Linking espeak-ng into a proprietary, distributed binary may trigger GPL source-disclosure obligations for your binary. This is the single largest licensing risk in the current plan and must be resolved before Phase 2 locks in a backend** — either by shipping espeak-ng as a separate process/component, or by choosing a non-GPL G2P path. **`docs/architecture/ADR-001-initial-tts-backend.md` does not evaluate this.** |
+| Piper voice models (`rhasspy/piper-voices`) | the actual voices | **per-voice, varies** | The *engine* being MIT does **not** make the *voices* MIT. Individual model cards differ (CC0 / CC-BY / CC-BY-SA / public-domain-derived, and some non-commercial). Each selected voice needs its own verified license. Do not assume "Apache 2.0". |
+| Kokoro-82M | alternative backend | Apache-2.0 (verify per checkpoint) | Permissive; check voice weights and any dependency separately. |
+| Training corpora behind any voice | provenance | varies | If you fine-tune or train a persona, the corpus license and the speaker's consent contract govern redistribution. |
+
+Non-commercial-only models to avoid for this product: Coqui XTTS v2 (CPML),
+F5-TTS (CC-BY-NC-4.0). Both are popular and both forbid commercial use without
+a separate agreement.
+
+## 5. Disclaimer
+
+THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THIS SOFTWARE.

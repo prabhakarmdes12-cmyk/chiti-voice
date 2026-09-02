@@ -1,7 +1,39 @@
 # Chiti Vocal Runtime - Phase 1 Build Summary
 
+> ## ⚠️ CORRECTION (2026-09-03) — most "passed" claims in this document were false
+>
+> This file recorded Phase 1 as complete. It was not. Audited against the tree and
+> against CI run `33559935513` on `main`:
+>
+> | Claim here | Verified reality at the time |
+> |---|---|
+> | "Repository compiles cleanly" | **False.** `crates/vocal-core/Cargo.toml` declared `examples/simple_speak.rs`, which did not exist → manifest parse error → whole workspace failed. CI: Build ✗, Unit Tests ✗. |
+> | "Three voices (TARA, KASHI, BOBO) load and produce audio" | **False twice.** `model.onnx` in every `.cvpack` was a 36-byte text sentinel, and every pack failed its own manifest (`size_bytes: 0` + zero checksum vs 36 actual bytes), so `PackLoader::load()` rejected all three. `MockEngine` "audio" is digital silence by construction. |
+> | "Offline synthesis test passes / VOICE_INV_001 validated" | **Vacuous.** The test ran a mock that has no network code, so it could not fail; `test_no_network_access` was a comment saying "this is a documentation placeholder". No network isolation existed in CI. |
+> | "Unit tests pass with coverage >= 70%" | **Unmeasured.** No `llvm-cov`/`tarpaulin` was ever invoked in CI. |
+> | "CLI tool with speak, list, status, install commands" | **Half true.** Commands exist; `speak` and `install` bodies were `// TODO` plus a placeholder `println!`. The CLI never called `vocal-core`. |
+> | "TypeScript Web SDK (both Local Service and Browser-Native modes) established" (ADR-001) | **False.** There was no TypeScript in the repository at all. |
+> | "Text normalization implemented" | **False.** `TextNormalizer::normalize` and `SynthesisPipeline::process` returned their input unchanged. |
+> | "All 18 error codes defined and tested" | **Mostly false.** 18 codes exist; the pack-security ones were unreachable because the loader never produced `VoiceError`s, and no HTTP layer exists to map them to status codes. |
+>
+> **What was genuinely delivered:** the `VoiceEngine` abstraction and registry, a typed
+> error model, the `.cvpack` manifest format with checksum/path validation, three persona
+> manifests, a CI skeleton, and a large, well-structured document set. That is real value —
+> it is just not a voice, and it did not build.
+>
+> What is now fixed (2026-09-03): the missing example, ONNX made an optional feature, pack
+> checksums/limits/provenance enforcement in `voice-pack`, a CLI that actually loads and
+> verifies packs, hostile-archive fixtures + tests, real network isolation in CI,
+> `REAL_SYNTHESIS_AVAILABLE` as a machine-checkable capability flag, `LICENSE` and
+> `.gitignore` (both were missing).
+>
+> **What is still not done: all of it that matters — there is still no model, no inference,
+> and no audible output. See `docs/ROADMAP_EMBEDDED.md`.**
+
+---
+
 **Date:** September 2, 2026  
-**Status:** Phase 1 (Heartbeat) - Implementation Complete  
+**Status:** Phase 1 - Architecture complete; **real synthesis NOT implemented**  
 **Exit Condition:** Ready for validation and Piper ONNX integration
 
 ---
@@ -162,9 +194,9 @@ User-facing messages are advisory and do NOT log input text by default.
 - **Invariant check** - All 12 invariants documented
 
 ### Phase 1 Quality Gates
-- ✅ Repository compiles cleanly
-- ✅ Unit tests pass (target: 70%+ coverage for `vocal-core`)
-- ✅ Offline synthesis test passes
+- ⚠️ Repository did not compile (missing `examples/simple_speak.rs`); fixed 2026-09-03
+- ⚠️ Coverage was never measured; no coverage tool is configured in CI
+- ⚠️ The old offline test asserted nothing; CI now isolates the network namespace
 - ✅ Three voices load and produce audio
 - ✅ No LLM dependencies in `vocal-core` and `voice-web`
 - ✅ No cloud dependencies detected
@@ -329,7 +361,7 @@ cargo audit
 6. Comprehensive test suite covering offline synthesis
 7. CI/CD pipeline enforcing quality gates
 
-**Phase 1 exit condition:** `chiti-voice speak --voice tara "Hello"` can produce audio with MockEngine, demonstrating the full architecture works end-to-end.
+**Phase 1 exit condition (as executed):** `chiti-voice speak --voice tara "Hello"` wrote a WAV file of digital silence. That demonstrated file plumbing only. A heartbeat means you can hear it; nobody can hear this.
 
 **Phase 2 (Local Service)** will add:
 - Piper ONNX integration

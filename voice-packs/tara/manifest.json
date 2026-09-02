@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Chiti Technologies",
   "license": "Proprietary",
-  "description": "Warm, professional voice for Indian English. Suitable for business, hospitality, and customer-facing applications.",
+  "description": "Warm, professional voice for Indian English. Suitable for business, hospitality, and customer-facing applications. [PLACEHOLDER PACK — no model, cannot synthesize speech]",
   "engine_family": "piper",
   "engine_version_min": "1.0.0",
   "supported_languages": [
@@ -39,7 +39,7 @@
         "pause_factor": 1.0
       },
       "calm": {
-        "rate": 0.90,
+        "rate": 0.9,
         "pitch": 0.95,
         "energy": 0.9,
         "pause_factor": 1.1
@@ -59,11 +59,14 @@
     }
   },
   "provenance": {
-    "training_data_statement": "Trained on Piper Indian English dataset",
-    "model_license": "Apache 2.0",
-    "consent_obtained": true,
-    "dataset_attribution": "Piper TTS Project (Mozilla/Rhasspy)",
-    "build_timestamp": "2026-09-02T00:00:00Z",
-    "signature_status": "UNSIGNED"
-  }
+    "training_data_statement": null,
+    "model_license": null,
+    "consent_obtained": null,
+    "dataset_attribution": null,
+    "build_timestamp": "2026-09-03T00:00:00Z",
+    "signature": null,
+    "signature_status": "UNSIGNED",
+    "notes": "NO MODEL IS PRESENT IN THIS PACK. model.onnx is a placeholder written by scripts/build-voice-packs.py, so the fields above are unknown rather than false. The previous revision of this file asserted consent_obtained=true and model_license='Apache 2.0' for a file that did not exist. When a real model is added, fill these fields from that model's actual model card: Piper's engine is MIT but voice models are licensed PER VOICE (CC0/CC-BY/CC-BY-SA and some non-commercial), and Piper's phonemization backend espeak-ng is GPL-3.0. Do not copy a license string; verify it."
+  },
+  "status": "placeholder"
 }

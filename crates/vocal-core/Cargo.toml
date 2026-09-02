@@ -4,6 +4,19 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+description = "Provider-agnostic offline voice synthesis runtime (engine abstraction, persona runtime, pipeline)"
+
+[features]
+default = []
+
+# Real ONNX-backed synthesis. Off by default ON PURPOSE:
+#   * `ort`'s build script downloads prebuilt ONNX Runtime binaries at build time,
+#     which would break air-gapped/offline builds and slow every CI job and every
+#     contributor who only needs the trait + pack plumbing.
+#   * Cross-compiling ONNX Runtime onto embedded targets (armv7/aarch64/riscv) is
+#     its own problem and should not be forced on the base crate.
+# See docs/ROADMAP_EMBEDDED.md before enabling this in a release build for a device.
+piper = ["dep:ort", "dep:ndarray"]
 
 [dependencies]
 tokio.workspace = true
@@ -11,16 +24,18 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-anyhow.workspace = true
-ndarray.workspace = true
-ort.workspace = true
-sha2.workspace = true
 hex.workspace = true
 async-trait.workspace = true
 voice-pack = { path = "../voice-pack" }
 
+# Optional: only compiled with --features piper.
+ort = { workspace = true, optional = true }
+ndarray = { workspace = true, optional = true }
+
 [dev-dependencies]
-mockito.workspace = true
+# NOTE: no HTTP-mocking library here on purpose. vocal-core must not gain a network
+# client even for tests; `mockito` was declared but never used and was removed.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [[example]]
 name = "simple_speak"

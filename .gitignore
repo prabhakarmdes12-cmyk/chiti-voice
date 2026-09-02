@@ -1,0 +1,45 @@
+# ─── Rust ───────────────────────────────────────────────────────────
+/target
+**/target
+
+# Cargo.lock is COMMITTED on purpose: this workspace builds binaries (the CLI),
+# so reproducible dependency resolution matters. Do not ignore it.
+
+# ─── Python (research + pack tooling) ───────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ─── Node / TypeScript (@chiti/voice-web, Voice Lab — Phase 3+) ─────
+node_modules/
+*.tsbuildinfo
+apps/voice-lab/dist/
+packages/voice-web/dist/
+
+# ─── Editors / OS ───────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# ─── Local scratch output ───────────────────────────────────────────
+/out
+/bench-results
+# voice-packs/dist/*.cvpack are tracked deliverables — do NOT ignore dist/ wholesale.
+
+# ─── Model weights ──────────────────────────────────────────────────
+# Real ONNX models are large binary assets (tens to hundreds of MB) and do not
+# belong in git. They are delivered via releases/LFS/a pack registry, then
+# assembled into .cvpack by scripts/build-voice-packs.py.
+voice-packs/**/*.onnx
+voice-packs/**/*.onnx.data
+
+# ─── Signing material (Phase 11) ────────────────────────────────────
+*.key
+*.pem
+/signing/

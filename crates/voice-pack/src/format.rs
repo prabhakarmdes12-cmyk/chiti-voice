@@ -40,6 +40,11 @@ impl VoicePack {
         self.files.get(path).map(|v| v.len())
     }
 
+    /// Whether this pack contains a real model or only placeholders.
+    pub fn is_placeholder(&self) -> bool {
+        self.manifest.is_placeholder()
+    }
+
     pub fn list_files(&self) -> Vec<&str> {
         self.files.keys().map(|k| k.as_str()).collect()
     }
@@ -65,6 +70,7 @@ mod tests {
             files: vec![],
             persona: None,
             provenance: None,
+            status: None,
         };
 
         let pack = VoicePack::new("tara.cvpack".to_string(), manifest, Default::default());

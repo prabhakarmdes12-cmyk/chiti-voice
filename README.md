@@ -3,256 +3,238 @@
 > **The voice infrastructure layer for software, agents, robots, and the web.**
 
 [![Rust](https://img.shields.io/badge/Rust-1.78+-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.5+-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-1.18+-005CED?style=flat-square&logo=onnx&logoColor=white)](https://onnxruntime.ai/)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-3.4+-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)](https://tailwindcss.com/)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)](./LICENSE)
 
 ---
 
-Chiti Vocal Runtime is an **offline-first, LLM-independent voice infrastructure platform** for software. It gives every application, agent, robot, and website a persistent, portable, and provenance-aware vocal identity — without a cloud API, without an LLM, without a bespoke wrapper.
+## ⚠️ Read this before you plan anything around this repo
 
-A `.cvpack` voice file is to speech what a `.ttf` font file is to text rendering: installable, portable, composable, and licensable.
+**Current state: architecture and packaging are implemented. Speech synthesis is not.**
 
----
+There is **No audible voice** in this repository. Concretely:
 
-## Architectural Invariant
+| Question | Answer today |
+|---|---|
+| Can it speak? | **No.** `MockEngine` emits digital silence; `PiperEngine` returns `ENGINE_NOT_AVAILABLE`. `vocal_core::REAL_SYNTHESIS_AVAILABLE == false`. |
+| Is there a voice model? | **No.** `voice-packs/*/model.onnx` never existed; `dist/*.cvpack` contained a 36-byte placeholder and is labelled `status: "placeholder"`. |
+| Is there a CLI that works? | Partially: `list`, `status`, `verify`, `install` really work (they load and validate packs). `speak` runs the whole pipeline and writes a **silent** WAV. |
+| Is there an HTTP daemon or TypeScript SDK? | **No.** Both are specs in `docs/api/`, nothing more. |
+| Do the CI gates mean anything? | Not yet: the fixed gates are staged in `ops/ci/` and need `scripts/install-ci.sh`. The live workflow still contains the ones that cannot fail. |
+| Does it compile? | It should now. It did not: `Cargo.toml` declared an `examples/simple_speak.rs` that didn't exist, which failed manifest parsing for the *whole workspace*, and CI has been red since. That file now exists and the ONNX backend is behind an optional feature. |
 
-> **`LANGUAGE GENERATION != VOICE GENERATION`**
->
-> Chiti Vocal Runtime is **not** a text generator. It is a voice renderer. It accepts text and renders it as audio. It does not decide *what* to say — only *how* to say it. LLM integration is optional, external, and always upstream.
-
----
-
-## Offline-First Principle
-
-Synthesis **must** work with the network cable physically unplugged. The runtime holds zero tolerance for synthesis paths that require any outbound network call. An automated network-blocking test is a required quality gate before any release.
-
----
-
-## Phase 1 (Heartbeat) Status - COMPLETE ✅
-
-**Released:** September 2, 2026  
-**All Exit Criteria Passed:**
-- ✅ Repository compiles cleanly on all platforms
-- ✅ Unit tests pass with 70%+ coverage  
-- ✅ Offline synthesis test passes (VOICE_INV_001 validated)
-- ✅ Three voices (TARA, KASHI, BOBO) load successfully
-- ✅ Zero cloud/LLM dependencies
-- ✅ Error codes tested and documented
-- ✅ Full CI/CD pipeline active
-
-**What's Ready:**
-- Complete VoiceEngine abstraction with MockEngine for testing
-- `.cvpack` voice pack format with security validation  
-- CLI tool with speak, list, install, status commands
-- Three persona configurations with prosody profiles
-- Comprehensive test suite (20+ tests)
-- GitHub Actions CI/CD with quality gates
-
-**What's Next (Phase 2):**
-- Piper ONNX model integration (real audio synthesis)
-- HTTP daemon (`vocal-local-service`) on 127.0.0.1:7731
-- TypeScript Web SDK (`@chiti/voice-web`)
-- Streaming synthesis and text normalization
-
-Full details: [PHASE1_COMPLETE.md](PHASE1_COMPLETE.md)
+Earlier revisions of this README, `PHASE1_COMPLETE.md` and `AGENTS.md` described Phase 1
+as complete, all exit criteria passed, three voices loading, and a TypeScript SDK
+established. **Those claims were false.** CI on `main` was failing, all three shipped
+`.cvpack` files failed their own checksums, and the offline test asserted nothing. The
+history is preserved in `PHASE1_COMPLETE.md` with a correction note; the rules that keep
+it from happening again are in the `docs-truth` CI job.
 
 ---
 
-## Quick Start
+## What this project is
 
-### Build & Test (Phase 1)
+An **offline-first, LLM-independent voice infrastructure layer**. It gives an
+application, agent, robot or website a persistent, portable, licensable vocal identity —
+without a cloud API and without an LLM in the synthesis path.
+
+A `.cvpack` voice file is to speech what a `.ttf` font file is to text: installable,
+portable, composable, licensable.
+
+### Architectural invariants
+
+> **`LANGUAGE GENERATION != VOICE GENERATION`** — this is a voice *renderer*. It decides
+> how to say things, never what to say. LLM integration is optional, external, upstream.
+
+> **Offline-first** — synthesis must work with the network cable unplugged.
+
+Two mechanisms keep these honest — one live, one pending adoption:
+
+- **Live now:** `vocal_core::REAL_SYNTHESIS_AVAILABLE == false` plus tests that assert the
+  real backend refuses to synthesize, so "it speaks" cannot be quietly asserted.
+- **After you run `scripts/install-ci.sh`:** CI executes the suite inside a network-less
+  namespace (`sudo unshare -rn`) and fails if isolation did not apply, verifies every
+  shipped `.cvpack` against its own manifest, audits the resolved dependency graph for
+  network/LLM clients, checks that provenance fields are not fabricated, and greps the
+  docs for capability claims the code cannot support.
+
+> **Why `install-ci.sh`:** the corrected workflow is staged in [`ops/ci/ci-phase1.yml`](./ops/ci/ci-phase1.yml)
+> rather than installed, because pushing to `.github/workflows/` needs the `workflows`
+> permission. **Until you run it, the live workflow's "quality gates" are the old ones that
+> cannot fail** — see [`ops/ci/README.md`](./ops/ci/README.md). Do not treat its green/red
+> output as a capability claim in either direction.
+
+Full list: [`docs/architecture/INVARIANTS.md`](./docs/architecture/INVARIANTS.md).
+
+---
+
+## Build and run
 
 ```bash
-# Clone and enter directory
-cd "d:\Projects\chiti voice"
-
-# Build all crates
-cargo build --release
-
-# Run tests (20+ tests)
+cargo build --workspace --all-targets        # default features: no ONNX, no network at build time
 cargo test --workspace
+cargo run -p vocal-core --example simple_speak -- "Hello" /tmp/out.wav
 
-# Run offline synthesis test (validates VOICE_INV_001)
-cargo test --test offline_synthesis -- --nocapture
+# CLI
+cargo run -p chiti-voice-cli --bin chiti-voice -- status
+cargo run -p chiti-voice-cli --bin chiti-voice -- list
+cargo run -p chiti-voice-cli --bin chiti-voice -- verify voice-packs/dist/tara.cvpack
+cargo run -p chiti-voice-cli --bin chiti-voice -- install voice-packs/dist/tara.cvpack --allow-placeholder
+cargo run -p chiti-voice-cli --bin chiti-voice -- speak --voice tara "Hello, world!" --allow-silence
 ```
 
-### CLI Usage (Phase 1 - MockEngine)
+Voice packs are built and verified with the pack tooling (checksums must always be
+computed from the bytes actually going into the archive):
 
 ```bash
-# Show available voices
-cargo run --bin chiti-voice -- list
-
-# Check runtime status
-cargo run --bin chiti-voice -- status
-
-# Synthesize with MockEngine (produces silence, validates pipeline)
-cargo run --bin chiti-voice -- speak --voice tara "Hello, world!"
-
-# Show version
-cargo run --bin chiti-voice -- version
+python3 scripts/build-voice-packs.py build
+python3 scripts/build-voice-packs.py build --require-real-models   # release: refuses placeholders
+python3 scripts/build-voice-packs.py verify
 ```
 
-### TypeScript SDK (Phase 2 - Coming Soon)
+`--limits embedded` / `--limits tiny` enforce the resource budgets a Raspberry Pi or toy
+target needs (VOICE_INV_011) while loading packs.
 
-```ts
-// Available after Phase 2 implementation
-import { ChitiVoice } from "@chiti/voice-web";
+### Enabling real speech
 
-const voice = await ChitiVoice.load("tara");
-await voice.speak("Welcome. How may I help you?");
+Nothing here produces audio until all three exist:
+
+1. a real ONNX model at `voice-packs/<id>/model.onnx` (with its `MODEL_CARD` license read
+   and copied into `provenance`),
+2. ONNX inference implemented in `crates/vocal-core/src/engine/piper.rs` behind
+   `--features piper` (the `ort` and `ndarray` dependencies are declared and waiting, used
+   by no code),
+3. `REAL_SYNTHESIS_AVAILABLE` flipped to `true` in the same PR, with a test that decodes a
+   real pack and asserts non-zero PCM.
+
+`docs/ROADMAP_EMBEDDED.md` is the current plan for getting there.
+
+---
+
+## Repository layout (what actually exists)
+
+```
+chiti-voice/
+├── apps/               # Runnable targets
+├── crates/             # Rust libraries
+├── voice-packs/        # Pack sources (manifest.json) + built dist/*.cvpack
+├── ops/                # Staged CI definitions awaiting permission to install
+├── scripts/            # Pack builder/verify, test-fixture generator, install-ci.sh
+└── docs/               # Architecture, API specs, personas, research
 ```
 
-### HTTP API (Phase 2 - Coming Soon)
+| Path | Contents |
+|------|----------|
+| `crates/vocal-core` | `VoiceEngine` trait, engine registry, `MockEngine` (silence), `PiperEngine` (unimplemented), personas, state machine, error codes, WAV encoding |
+| `crates/voice-pack` | `.cvpack` container: manifest schema, size/rate-limited loader, security validator |
+| `apps/chiti-voice-cli` | `speak`, `list`, `verify`, `status`, `install`, `version` |
+| `voice-packs/{tara,kashi,bobo}` | Persona manifests (no models) |
+| `docs/architecture` | System overview, invariants, state machine, security, privacy, ADR-001 |
+| `docs/api` | HTTP + TypeScript SDK **specifications** (not implemented) |
+| `docs/research` | Model-size and quality research tracks |
 
-```http
-# Local HTTP daemon (127.0.0.1:7731) - Phase 2
-POST http://127.0.0.1:7731/v1/speak
-Content-Type: application/json
-
-{
-  "voice": "tara",
-  "text": "Your order has been confirmed.",
-  "format": "pcm_f32",
-  "stream": true
-}
-```
+> Planned directories (`packages/voice-web`, `engines/`, `tools/`, `apps/voice-lab`,
+> `apps/vocal-local`, `research/`, `tests/`) **do not exist yet** and are deliberately not
+> listed above. The previous README documented them as if they did.
 
 ---
 
 ## Personas
 
-Chiti Vocal Runtime ships with three reference personas:
+Three persona *specifications* exist. Three voices do not — persona ≠ model.
 
-| Persona | Identity | Primary Use |
+| Persona | Identity | Primary use |
 |---------|----------|-------------|
-| **TARA** | Warm, professional, Indian English female-presenting | Business, hospitality, customer interfaces |
-| **KASHI** | Calm, measured, Hindi/Sanskrit-aware male-presenting | Guidance, knowledge delivery, navigation |
-| **BOBO** | High-expressiveness, playful, fictional non-child character | Children's products, toys, robots |
+| **TARA** | Warm, professional, Indian English, female-presenting | Business, hospitality, customer interfaces |
+| **KASHI** | Calm, measured, Hindi/Sanskrit-aware, male-presenting | Guidance, knowledge, navigation |
+| **BOBO** | High-expressiveness, playful, fictional character | Children's products, toys, robots |
 
 ---
 
-## Six Logical Products
+## Six logical products (vision vs. status)
 
-| Product | Description |
-|---------|-------------|
-| **Chiti Vocal Core** | The core runtime engine abstraction and synthesis pipeline — provider-agnostic, backend-swappable |
-| **Chiti Voice Pack (`.cvpack`)** | Portable, versioned, signed, provenance-aware voice package format |
-| **Chiti Persona Runtime** | Maps text + intent + persona metadata → synthesis parameters and prosody |
-| **Chiti Vocal Local Service** | Loopback HTTP/WebSocket daemon enabling any local application to call voice synthesis |
-| **Chiti Voice Web SDK** | `@chiti/voice-web` TypeScript SDK for browser and Node.js applications |
-| **Chiti Voice Lab** | Developer GUI for testing, comparing, benchmarking, and tuning voices |
-
----
-
-## Monorepo Structure
-
-```
-chiti-voice/
-├── apps/               # Runnable applications
-│   ├── vocal-local/    # Local HTTP/WS daemon
-│   └── voice-lab/      # Developer GUI (Tauri + React)
-├── packages/           # Shared libraries and SDKs
-│   ├── vocal-core/     # Core runtime (Rust)
-│   ├── voice-web/      # @chiti/voice-web TypeScript SDK
-│   └── vocal-types/    # Shared type definitions
-├── engines/            # Voice engine backend adapters
-│   ├── engine-kokoro/  # Kokoro TTS adapter
-│   ├── engine-piper/   # Piper TTS adapter
-│   └── engine-onnx/    # Generic ONNX backend
-├── voices/             # Voice pack sources and build tooling
-│   ├── tara/
-│   ├── kashi/
-│   └── bobo/
-├── tools/              # Build tools, CLI, pack builder
-│   ├── chiti-voice-cli/
-│   └── cvpack-builder/
-├── research/           # Model experiments, benchmarks, architecture explorations
-├── tests/              # Integration, offline, and E2E tests
-└── docs/               # Specification documents
-```
-
-| Directory | Contents |
-|-----------|----------|
-| `apps/` | Runnable application targets |
-| `packages/` | Shared runtime libraries and SDKs |
-| `engines/` | Pluggable TTS backend adapters |
-| `voices/` | Voice pack source data and build configs |
-| `tools/` | CLI, pack builder, dev utilities |
-| `research/` | Model experiments and benchmarking |
-| `tests/` | Integration, offline blocking, and E2E test suites |
-| `docs/` | All specification and architecture documents |
-
----
-
-## Development Phases
-
-| Phase | Name | Key Deliverable |
-|-------|------|----------------|
-| **Phase 0** | Foundation | Monorepo scaffold, invariants codified, ADR-001 backend decision |
-| **Phase 1** | Heartbeat | One voice speaks offline from CLI — TARA says "Hello" from `.cvpack` |
-| **Phase 2** | Local Service | HTTP daemon running on loopback, `/v1/speak` returns PCM |
-| **Phase 3** | Web SDK | `@chiti/voice-web` connects to local daemon, works in browser |
-| **Phase 4** | Three Voices | TARA, KASHI, BOBO all load, speak, and pass evaluation sentences |
-| **Phase 5** | Persona Runtime | Intent-to-prosody mapping, emotion/style parameters wired end-to-end |
-| **Phase 6** | Text Normalization | Indian English: ₹ currency, dates, phone numbers, abbreviations |
-| **Phase 7** | Voice Lab v0 | Developer GUI ships: load, speak, compare, waveform view |
-| **Phase 8** | Streaming | Real-time PCM/WAV streaming, barge-in, cancellation |
-| **Phase 9** | Pronunciation | Custom dictionary, word-level G2P override, IPA editor in Voice Lab |
-| **Phase 10** | Pack Security | Checksum validation, path traversal guard, zip bomb protection |
-| **Phase 11** | Signing & Provenance | Cryptographic pack signing, publisher verification, UNSIGNED status |
-| **Phase 12** | Browser Native | WASM/WebGPU in-browser synthesis — no daemon required |
+| Product | Status |
+|---------|--------|
+| Chiti Vocal Core | Interface + mock backend implemented; **no real backend** |
+| Chiti Voice Pack (`.cvpack`) | Implemented: format, manifest, limits, security validation |
+| Chiti Persona Runtime | Data model implemented; **not wired to any engine** |
+| Chiti Vocal Local Service | Spec only |
+| Chiti Voice Web SDK | Spec only |
+| Chiti Voice Lab | Not started |
 
 ---
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [`docs/SYSTEM_OVERVIEW.md`](./docs/SYSTEM_OVERVIEW.md) | End-to-end architecture walkthrough |
-| [`docs/INVARIANTS.md`](./docs/INVARIANTS.md) | All 12 system invariants (VOICE_INV_001–012) |
-| [`docs/HTTP_API.md`](./docs/HTTP_API.md) | Local daemon HTTP and WebSocket API reference |
-| [`docs/CVPACK_SPECIFICATION.md`](./docs/CVPACK_SPECIFICATION.md) | `.cvpack` format, manifest schema, security rules |
-| [`PRD.md`](./PRD.md) | Full Product Requirements Document |
+| Document | |
+|----------|--|
+| [`docs/architecture/SYSTEM_OVERVIEW.md`](./docs/architecture/SYSTEM_OVERVIEW.md) | Architecture walkthrough |
+| [`docs/architecture/INVARIANTS.md`](./docs/architecture/INVARIANTS.md) | The 12 system invariants |
+| [`docs/architecture/STATE_MACHINE.md`](./docs/architecture/STATE_MACHINE.md) | Engine lifecycle |
+| [`docs/architecture/SECURITY.md`](./docs/architecture/SECURITY.md) | Threat model |
+| [`docs/architecture/PRIVACY.md`](./docs/architecture/PRIVACY.md) | Privacy and data handling |
+| [`docs/architecture/ADR-001-initial-tts-backend.md`](./docs/architecture/ADR-001-initial-tts-backend.md) | Backend selection (**status: PROPOSED — decision not made**) |
+| [`docs/voice-pack/SPECIFICATION.md`](./docs/voice-pack/SPECIFICATION.md) | `.cvpack` format |
+| [`docs/api/HTTP_API.md`](./docs/api/HTTP_API.md) | Local daemon API (**not implemented**) |
+| [`docs/api/TYPESCRIPT_API.md`](./docs/api/TYPESCRIPT_API.md) | SDK API (**not implemented**) |
+| [`docs/ROADMAP_EMBEDDED.md`](./docs/ROADMAP_EMBEDDED.md) | **Start here**: plan for real, offline, device-sized voice |
+| [`PRD.md`](./PRD.md) | Product requirements |
+| [`LICENSE`](./LICENSE) | Proprietary notice + third-party obligations (draft — needs review) |
 
 ---
 
-## Tech Stack
+## Roadmap
 
-| Layer | Technology |
-|-------|-----------|
-| Core Runtime | Rust (vocal-core, engine adapters, local daemon) |
-| Voice Lab UI | Tauri + React + Tailwind CSS |
-| SDK | TypeScript (`@chiti/voice-web`) |
-| Inference | ONNX Runtime (CPU, with GPU roadmap) |
-| Research | Python + PyTorch |
-| Pack Format | ZIP + JSON manifest + model blobs |
-| CLI | Rust + Clap |
+Phase numbering in `PRD.md` assumed backend-then-service-then-SDK. For an
+**embedded, offline-only** goal that ordering buries the risky part, so
+[`docs/ROADMAP_EMBEDDED.md`](./docs/ROADMAP_EMBEDDED.md) re-sequences it: one real voice
+first, then size/latency on the actual device, then the service/SDK surface.
+
+| Phase | Name | Status |
+|-------|------|--------|
+| 0 | Foundation, invariants, docs | ✅ done |
+| 1 | Interfaces, `.cvpack` format, CLI skeleton, CI | ⚠️ code done except real audio; **gates were false, now repaired** |
+| 2 | Real synthesis: ONNX backend, one voice, WAV out | ⛔ not started ← **the actual next step** |
+| 3 | Size/latency budget on target hardware | ⛔ not started |
+| 4 | Local HTTP/WS daemon (127.0.0.1) | ⛔ not started |
+| 5 | `@chiti/voice-web` SDK | ⛔ not started |
+| 6+ | Text normalization, streaming, personas wiring, Voice Lab, signing, browser-native | ⛔ not started |
 
 ---
 
-## Contributing
+## Tech stack
 
-Chiti Vocal Runtime is proprietary software owned by Chiti Technologies. Contribution guidelines, code of conduct, and CLA details will be published prior to any external contributor program opening.
+| Layer | Technology | Status |
+|-------|-----------|--------|
+| Core runtime | Rust (tokio, async-trait) | ✅ |
+| Inference | ONNX Runtime via `ort` | declared, optional feature, **unused** |
+| Pack format | ZIP + JSON manifest + blobs, SHA-256, size/ratio limits | ✅ |
+| CLI | `clap` 4 | ✅ (WAV file output; no device playback) |
+| Local daemon | Rust + Axum | spec only |
+| SDK | TypeScript | spec only |
+| Voice Lab | Tauri/Next.js + React + Tailwind | not started |
+| Research | Python (pack tooling) | ✅ partial |
 
-For internal contributors, see `docs/CONTRIBUTING_INTERNAL.md`.
+Adding a dependency here has a bar: no network client in the synthesis path, and it must
+cross-compile onto the target device. That is why `ort` is optional, why the `dirs` crate
+isn't used (the CLI reads `HOME`/`USERPROFILE`), and why `mockito` was removed.
 
 ---
 
 ## License
 
-Copyright © 2026 Chiti Technologies. All rights reserved.
+Copyright © 2026 Chiti Technologies. All rights reserved. See [`LICENSE`](./LICENSE).
 
-This software and all associated assets are proprietary to Chiti Technologies. Redistribution, modification, or use outside of a valid Chiti Technologies license agreement is strictly prohibited. See [LICENSE](./LICENSE) for full terms.
+The `LICENSE` file is a **draft awaiting legal review**, and it documents the
+third-party obligations that a proprietary notice does not override — notably that
+espeak-ng (used by Piper for phonemization) is GPL-3.0 and that Piper's voice models are
+licensed per voice, not MIT by association. Resolving those is a prerequisite for shipping,
+not a formality.
 
 ---
 
 <div align="center">
 
-**Chiti Technologies** · Building infrastructure for intelligent software.
-
-*Chiti Vocal Runtime is a Chiti Technologies product.*
+**Chiti Technologies** · *Chiti Vocal Runtime is a Chiti Technologies product.*
 
 </div>
