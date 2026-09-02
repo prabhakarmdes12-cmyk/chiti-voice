@@ -144,6 +144,10 @@ impl crate::engine::VoiceEngine for MockEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The trait is implemented via a fully-qualified path above
+    // (`impl crate::engine::VoiceEngine for ...`), so its methods are not in
+    // scope here unless the trait itself is imported.
+    use crate::engine::VoiceEngine;
 
     #[tokio::test]
     async fn test_mock_engine_initialization() {

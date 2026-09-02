@@ -52,11 +52,22 @@ for line in raw.splitlines():
 if not lines:
     lines = ["no diagnostic parsed; raw tail: " + raw[-900:].replace("\n", "|")]
 
-for text in lines[:14]:
-    safe = text.replace("\r", " ").replace("%", "25").replace("\n", " ")[:1400]
-    print(f"::error::RUSTC {safe}", flush=True)
+# GitHub keeps at most 10 annotations per check run, so one line per error gets
+# truncated silently. Pack them into a few long chunks instead.
+joined = [t.replace("\r", " ").replace("%", "25").replace("\n", " ") for t in lines]
+chunks, cur = [], ""
+for t in joined:
+    if len(cur) + len(t) + 3 > 1300 and cur:
+        chunks.append(cur); cur = t
+    else:
+        cur = t if not cur else cur + " ;; " + t
+if cur:
+    chunks.append(cur)
+
+for i, c in enumerate(chunks[:6]):
+    print(f"::error::RUSTC[{i + 1}/{len(chunks)}] {c}", flush=True)
     emitted += 1
-print(f"::notice::RUSTC summary emitted={emitted} total_errors={len(lines)}", flush=True)
+print(f"::notice::RUSTC summary chunks={len(chunks)} total_errors={len(lines)}", flush=True)
 PY
 fi
 

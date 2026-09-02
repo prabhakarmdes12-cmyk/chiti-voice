@@ -182,9 +182,13 @@ fn error_codes_are_defined_and_documented() {
     assert_eq!(codes.len(), 18, "PRD section 15 defines 18 codes");
 
     for code in codes {
-        assert!(!code.as_str().is_empty());
-        assert!(!code.user_message().is_empty());
-        assert!(code.as_str().is_uppercase() || code.as_str().contains('_'));
+        let s = code.as_str();
+        assert!(!s.is_empty(), "{code:?} has an empty stable string");
+        assert!(!code.user_message().is_empty(), "{s} has no user message");
+        assert!(
+            s.chars().all(|c| c.is_ascii_uppercase() || c == '_'),
+            "error code {s} must be SCREAMING_SNAKE_CASE so it can be matched on by clients"
+        );
     }
 }
 
