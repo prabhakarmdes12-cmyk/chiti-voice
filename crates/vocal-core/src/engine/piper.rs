@@ -65,10 +65,13 @@ impl PiperEngine {
             engine_version: "1.0.0".to_string(),
         };
 
-        self.voices.insert(voice_id, config);
+        // `voice_id` is used again by the log line below, so it must not be moved into
+        // the map. (E0382 — pre-existing in this file, previously masked because the
+        // workspace never compiled.)
+        self.voices.insert(voice_id.clone(), config);
         self.capabilities.push(cap);
 
-        debug!("Registered Piper voice: {}", voice_id);
+        debug!("Registered Piper voice: {voice_id}");
     }
 
     /// Get configuration for a specific voice
