@@ -133,7 +133,10 @@ pub struct SynthesisResponse {
 }
 
 mod serde_arrays {
-    use serde::{Deserializer, Serializer};
+    // `Deserialize` must be in scope for the `String::deserialize` call below. It was
+    // missing in the original code — a genuine compile error (E0599) that had never
+    // surfaced because the workspace manifest prevented the crate from compiling at all.
+    use serde::{de, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(data: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -147,7 +150,7 @@ mod serde_arrays {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        hex::decode(s).map_err(serde::de::Error::custom)
+        hex::decode(&s).map_err(de::Error::custom)
     }
 }
 
