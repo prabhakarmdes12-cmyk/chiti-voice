@@ -15,6 +15,20 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
+/// Assert why a fixture was rejected, case-insensitively.
+///
+/// The validator's messages begin with a capital ("Checksum mismatch for …"), and the
+/// LoadError Display prefix changes the casing of nothing but is still prose. Pinning the
+/// exact casing of a sentence would make these tests brittle to wording edits while
+/// proving nothing about behaviour; what matters is *which rule* fired.
+fn err_message_has(name: &str, needle: &str) {
+    let msg = err_message(name);
+    assert!(
+        msg.to_lowercase().contains(&needle.to_lowercase()),
+        "unexpected rejection reason for {name}: {msg}"
+    );
+}
+
 fn err_of(name: &str) -> LoadError {
     match PackLoader::new().load(&fixture(name)) {
         Ok(pack) => panic!(
@@ -75,40 +89,34 @@ fn executable_content_is_rejected() {
 
 #[test]
 fn tampered_bytes_fail_checksum() {
-    let msg = err_message("tampered.cvpack");
-    assert!(msg.contains("Checksum mismatch"), "unexpected: {msg}");
+    err_message_has("tampered.cvpack", "Checksum mismatch");
 }
 
 #[test]
 fn truncated_file_fails_size_check() {
-    let msg = err_message("truncated.cvpack");
-    assert!(msg.contains("Size mismatch"), "unexpected: {msg}");
+    err_message_has("truncated.cvpack", "Size mismatch");
 }
 
 #[test]
 fn zero_sized_declared_file_is_rejected() {
     // The original defect: manifests shipped `"size_bytes": 0` plus a zero hash.
-    let msg = err_message("zero_size.cvpack");
-    assert!(msg.contains("size 0"), "unexpected: {msg}");
+    err_message_has("zero_size.cvpack", "size 0");
 }
 
 #[test]
 fn zero_hash_checksum_is_rejected() {
-    let msg = err_message("zero_hash.cvpack");
-    assert!(msg.contains("checksum"), "unexpected: {msg}");
+    err_message_has("zero_hash.cvpack", "checksum");
 }
 
 #[test]
 fn duplicate_manifest_entries_are_rejected() {
-    let msg = err_message("duplicate.cvpack");
-    assert!(msg.contains("Duplicate"), "unexpected: {msg}");
+    err_message_has("duplicate.cvpack", "Duplicate");
 }
 
 #[test]
 fn real_pack_without_provenance_is_rejected() {
     // VOICE_INV_008: provenance is mandatory for a pack that claims to be real.
-    let msg = err_message("real_no_provenance.cvpack");
-    assert!(msg.contains("provenance"), "unexpected: {msg}");
+    err_message_has("real_no_provenance.cvpack", "provenance");
 }
 
 #[test]

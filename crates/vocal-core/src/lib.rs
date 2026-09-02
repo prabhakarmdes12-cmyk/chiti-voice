@@ -50,18 +50,34 @@ mod tests {
 
     #[tokio::test]
     async fn truth_gate_reports_no_real_synthesis() {
-        // If a future PR implements ONNX inference, this test failing is the
-        // intended signal to flip REAL_SYNTHESIS_AVAILABLE and re-verify the docs.
-        assert!(!REAL_SYNTHESIS_AVAILABLE);
-
-        // The corollary must hold too: the non-mock engine must refuse to synthesize,
-        // and must not report Healthy while it cannot.
         use crate::engine::piper::PiperEngine;
         use crate::engine::VoiceEngine;
 
-        let engine = PiperEngine::new();
+        // The flag must agree with observable behaviour, so this is not a tautology: a PR
+        // that implements inference without flipping REAL_SYNTHESIS_AVAILABLE fails here,
+        // and so does one that flips the flag without implementing anything. Pinning both
+        // directions is the entire reason the constant exists.
+        let mut engine = PiperEngine::new();
+        engine.initialize().await.unwrap();
+        let refuses = engine
+            .synthesize(&crate::synthesis::SynthesisRequest::new("tara", "one sentence"))
+            .await
+            .is_err();
+        assert_eq!(
+            REAL_SYNTHESIS_AVAILABLE,
+            !refuses,
+            "REAL_SYNTHESIS_AVAILABLE={} while PiperEngine::synthesize {} — flag and engine must change in the same commit",
+            REAL_SYNTHESIS_AVAILABLE,
+            if refuses { "refuses to speak" } else { "produces audio" }
+        );
+
+        // A capability lie is worse than a missing feature: an engine that cannot produce
+        // audio must not report Healthy, or applications will build against it.
         assert!(
-            !matches!(engine.health().await.unwrap(), crate::engine::EngineHealth::Healthy),
+            !matches!(
+                engine.health().await.unwrap(),
+                crate::engine::EngineHealth::Healthy
+            ),
             "PiperEngine reported Healthy while synthesis is unimplemented"
         );
     }

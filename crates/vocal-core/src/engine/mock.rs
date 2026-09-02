@@ -184,7 +184,8 @@ mod tests {
     fn test_generate_silence() {
         let engine = MockEngine::new();
         let silence = engine.generate_silence(1.0); // 1 second
-        let expected_bytes = 1 * 22050 * 4; // 1 second * sample rate * 4 bytes per sample
+        // 1 second * 22050 samples/s * 4 bytes/sample (f32)
+        let expected_bytes = 22050 * 4;
         assert_eq!(silence.len(), expected_bytes);
     }
 }

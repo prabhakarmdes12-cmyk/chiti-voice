@@ -41,18 +41,24 @@ def manifest(files: list[dict], status: str | None = "placeholder", provenance: 
         "supported_languages": ["en-IN"],
         "files": files,
         "persona": None,
-        "provenance": provenance
-        if provenance is not None
-        else {
+        "provenance": (
+            None
+            if provenance == "omit"
+            else provenance
+            if provenance is not None
+            else {
             "training_data_statement": "n/a (placeholder)",
             "model_license": "n/a",
             "consent_obtained": None,
             "dataset_attribution": "n/a",
             "build_timestamp": "2026-09-03T00:00:00Z",
             "signature": None,
-            "signature_status": "UNSIGNED",
-        },
+                "signature_status": "UNSIGNED",
+            }
+        ),
     }
+    if provenance == "omit":
+        m.pop("provenance", None)
     if status:
         m["status"] = status
     return json.dumps(m, indent=2)
@@ -125,7 +131,7 @@ def main() -> None:
     fixtures["zero_hash.cvpack"] = (manifest([badhash]), {"model.onnx": MODEL})
 
     # 10. Real (non-placeholder) pack with no provenance block -> VOICE_INV_008 gate.
-    fixtures["real_no_provenance.cvpack"] = (manifest([good_model, good_cfg], status=None, provenance=None), {"model.onnx": MODEL, "model_config.json": b'{"sample_rate": 22050}\n'})
+    fixtures["real_no_provenance.cvpack"] = (manifest([good_model, good_cfg], status=None, provenance="omit"), {"model.onnx": MODEL, "model_config.json": b'{"sample_rate": 22050}\n'})
 
     # 11. Unsupported schema version.
     m = json.loads(manifest([good_model]))

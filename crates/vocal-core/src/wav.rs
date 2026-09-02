@@ -12,9 +12,17 @@ use std::path::Path;
 ///
 /// Input is assumed to be in `[-1.0, 1.0]`; values outside that range are clamped.
 pub fn f32_bytes_to_pcm16(pcm_f32: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(pcm_f32.len() / 2);
-    for chunk in pcm_f32.chunks_exact(4) {
-        let sample = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+    // as_chunks::<4>() splits at compile-time-known size and hands back the leftover
+    // tail explicitly, instead of silently ignoring a truncated final sample.
+    let (chunks, tail) = pcm_f32.as_chunks::<4>();
+    debug_assert!(
+        tail.is_empty(),
+        "{} trailing byte(s) ignored while converting f32 PCM",
+        tail.len()
+    );
+    let mut out = Vec::with_capacity(chunks.len() * 2);
+    for chunk in chunks {
+        let sample = f32::from_le_bytes(*chunk);
         let scaled = (sample * 32767.0).clamp(-32768.0, 32767.0).round() as i16;
         out.extend_from_slice(&scaled.to_le_bytes());
     }

@@ -27,6 +27,12 @@ impl SynthesisFormat {
         }
     }
 
+    /// Deliberately an inherent `Option`-returning helper rather than
+    /// `impl std::str::FromStr`: there is no error worth carrying for an unknown format
+    /// name (every caller already knows its own vocabulary and maps the failure onto its
+    /// own error type — the CLI onto a usage error, the pack loader onto a schema error),
+    /// and `FromStr` would force an `Err` type onto the whole crate for no benefit.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "pcm_f32" => Some(Self::PcmF32),
