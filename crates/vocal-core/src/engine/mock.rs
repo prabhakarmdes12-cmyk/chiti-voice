@@ -118,18 +118,22 @@ impl crate::engine::VoiceEngine for MockEngine {
     async fn stream(
         &self,
         request: &SynthesisRequest,
-    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>> {
+    ) -> VoiceResult<
+        std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>,
+    > {
         let request = request.clone();
         let sample_rate = self.sample_rate;
 
-        let future = Box::new(async move {
+        let future = async move {
             let estimated_duration = (request.text.len() as f32) / 100.0;
             let num_samples = (estimated_duration * sample_rate as f32) as usize;
             let silence = vec![0u8; num_samples * 4];
             Ok(silence)
-        });
+        };
 
-        Ok(future)
+        // Box::pin, not Box::new: see the trait docs on why the caller must be able
+        // to poll this without knowing the concrete future type.
+        Ok(Box::pin(future))
     }
 
     async fn stop(&self) -> VoiceResult<()> {

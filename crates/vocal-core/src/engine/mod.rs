@@ -65,11 +65,20 @@ pub trait VoiceEngine: Send + Sync {
     /// Perform synthesis and return complete audio
     async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse>;
 
-    /// Perform streaming synthesis (returns first chunk quickly)
+    /// Perform streaming synthesis (returns first chunk quickly).
+    ///
+    /// The returned future is `Pin<Box<…>>` on purpose. It used to be a bare
+    /// `Box<dyn Future>`, which no caller can poll: `dyn Future` is `!Unpin`, so
+    /// `boxed_future.await` is rejected with E0277 and the method was effectively
+    /// unusable through the trait object (only reachable in a test that pinned it
+    /// locally). Pinning at the source keeps `stream()` callable generically while
+    /// still being `Send` for task spawning.
     async fn stream(
         &self,
         request: &SynthesisRequest,
-    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>;
+    ) -> VoiceResult<
+        std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>,
+    >;
 
     /// Stop any in-progress synthesis
     async fn stop(&self) -> VoiceResult<()>;

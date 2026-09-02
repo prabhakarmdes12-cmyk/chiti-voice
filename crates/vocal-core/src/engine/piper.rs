@@ -105,7 +105,7 @@ impl crate::engine::VoiceEngine for PiperEngine {
             ))
         } else {
             Ok(crate::engine::EngineHealth::Unhealthy(
-                "Piper backend not implemented: voices are registered but no audio                  can be synthesized (ONNX inference pending)".to_string(),
+                "Piper backend not implemented: voices are registered but no audio can be synthesized (ONNX inference pending)".to_string(),
             ))
         }
     }
@@ -145,14 +145,16 @@ impl crate::engine::VoiceEngine for PiperEngine {
         // See docs/ROADMAP_EMBEDDED.md ("Phase 2: real audio") for the plan.
         Err(crate::error::VoiceError::new(
             VoiceErrorCode::EngineNotAvailable,
-            "Piper synthesis is not implemented: no ONNX inference path exists yet              (enable --features piper and implement OrtSession run; see docs/ROADMAP_EMBEDDED.md)",
+            "Piper synthesis is not implemented: no ONNX inference path exists yet (enable --features piper and implement OrtSession run; see docs/ROADMAP_EMBEDDED.md)",
         ))
     }
 
     async fn stream(
         &self,
         _request: &SynthesisRequest,
-    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>> {
+    ) -> VoiceResult<
+        std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>,
+    > {
         Err(crate::error::VoiceError::new(
             VoiceErrorCode::EngineNotAvailable,
             "Piper streaming is not implemented: no ONNX inference path exists yet",

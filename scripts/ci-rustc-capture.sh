@@ -16,6 +16,7 @@
 
 printf '%s' "$*" | grep -Eq -- '--crate-name[= ](vocal_core|voice_pack|chiti_voice)' && MATCH=1 || MATCH=0
 printf '%s\n' "$MATCH" > /tmp/rustc-wrapper-match
+printf '%s' "$*" > /tmp/rustc-wrapper-args
 
 case "$1" in
   *clippy-driver*) CI_CLIPPY_WARNINGS=1; export CI_CLIPPY_WARNINGS ;;
@@ -95,7 +96,18 @@ if not lines:
         # Cargo failed on one of our crates but nothing was parseable: surface the tail.
         lines = ["unparsed failure; stderr tail: " + raw[-1000:].replace("\n", "|")]
     else:
-        raise SystemExit(0)
+        # A dependency failed to build. That is not our source's fault, but it is our
+        # problem: the live matrix builds rust=[stable,nightly], so a nightly-only break
+        # in someone else's crate reddens this repo's build gate with nothing to read.
+        # Surface the first error line and the tail so the cause is identifiable.
+        m = re.search(r"^error(?:\[[EW]\d+\])?!?:? ?(.{0,300})", raw, re.M)
+        head = m.group(1).strip() if m else ""
+        if not head and "error" not in raw.lower():
+            raise SystemExit(0)
+        import re as _re
+        crate = _re.search(r"--crate-name[= ](\S+)", open("/tmp/rustc-wrapper-args").read())
+        name = crate.group(1) if crate else "?"
+        lines = [f"DEPENDENCY {name}: {head or 'no error line'}; tail: " + raw[-700:].replace("\n", "|")]
 
 # GitHub keeps at most 10 annotations per check run, so pack the list into a few long
 # chunks instead of emitting one annotation per diagnostic.
