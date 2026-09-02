@@ -12,7 +12,12 @@ edition = "2021"
 authors = ["Chiti Technologies"]
 license = "Proprietary"
 repository = "https://github.com/chiti-technologies/vocal-runtime"
-rust-version = "1.78"
+# 1.88 is not arbitrary: `ort 2.0.0-rc.13` declares `rust_version = "1.88"`, and it is an
+# exact (prerelease) pin. Because Cargo's MSRV-aware resolver must satisfy
+# `rust-version`, declaring anything lower makes *resolution itself* fail — which surfaces
+# as every CI job dying in ~30s with exit 101 and no compiler output at all. If you bump
+# ort, re-check its MSRV here.
+rust-version = "1.88"
 
 [workspace.dependencies]
 tokio = { version = "1.40", features = ["full"] }

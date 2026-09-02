@@ -2,7 +2,7 @@
 
 > **The voice infrastructure layer for software, agents, robots, and the web.**
 
-[![Rust](https://img.shields.io/badge/Rust-1.78+-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Rust](https://img.shields.io/badge/Rust-1.88+-000000?style=flat-square&logo=rust&logoColor=white)](https://www.rust-lang.org/)
 [![ONNX Runtime](https://img.shields.io/badge/ONNX_Runtime-1.18+-005CED?style=flat-square&logo=onnx&logoColor=white)](https://onnxruntime.ai/)
 [![License](https://img.shields.io/badge/License-Proprietary-red?style=flat-square)](./LICENSE)
 
