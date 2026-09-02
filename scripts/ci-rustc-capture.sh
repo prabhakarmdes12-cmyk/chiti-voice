@@ -3,56 +3,58 @@
 #
 # Why this exists: the Actions log hosts (results-receiver / objects.githubusercontent.com)
 # are unreachable from the auditing environment, so `gh run view --log` cannot fetch the
-# compiler output at all. This wrapper re-emits each rustc/clippy diagnostic that points at
-# this repository's own sources as a `::error::` workflow command; the runner records those
-# as check-run ANNOTATIONS, which are readable through the checks API.
+# compiler output at all. This wrapper re-emits rustc/clippy diagnostics that point at this
+# repository's own sources as `::error::` workflow commands; the runner records those as
+# check-run ANNOTATIONS, which are readable through the checks API.
 #
 # Selection is by file path (`crates/…`, `apps/…`) rather than by --crate-name, because
-# integration tests, examples and benches compile under crate names that do not match the
-# crate they live in — filtering on the name silently hid a whole class of errors.
+# integration tests, examples and benches compile under their own names — filtering on the
+# name silently hid a whole class of errors.
 #
-# rustc's own output is passed through byte-for-byte and its exit code is preserved, so
-# cargo's rendering and the job's pass/fail semantics are unaffected.
+# Every invocation gets its OWN scratch directory. Using a fixed /tmp path made all the
+# parallel rustc processes of a cold build write and re-read the same file, so cargo
+# received interleaved JSON it could not parse: the build failed in ~15s with exit 101 and
+# no diagnostics anywhere. If scratch allocation is impossible, the wrapper gets out of the
+# way entirely (`exec "$@"`) rather than risking the real build.
 
-printf '%s' "$*" | grep -Eq -- '--crate-name[= ](vocal_core|voice_pack|chiti_voice)' && MATCH=1 || MATCH=0
-printf '%s\n' "$MATCH" > /tmp/rustc-wrapper-match
-printf '%s' "$*" > /tmp/rustc-wrapper-args
+scratch=$(mktemp -d 2>/dev/null) || exec "$@"
+argsf="$scratch/args"
+outf="$scratch/out"
+
+printf '%s' "$*" > "$argsf"
 
 case "$1" in
   *clippy-driver*) CI_CLIPPY_WARNINGS=1; export CI_CLIPPY_WARNINGS ;;
 esac
 
-"$@" > /tmp/rustc-raw.out 2>&1
+"$@" > "$outf" 2>&1
 code=$?
-cat /tmp/rustc-raw.out
+cat "$outf"
 
 if [ "$code" -ne 0 ]; then
-  python3 - <<'PY'
-import json, os, re
+  python3 - "$outf" "$argsf" <<'PY'
+import json, os, re, sys
 
-MATCH = open("/tmp/rustc-wrapper-match").read().strip() == "1"
-WANT_WARNINGS = os.environ.get("CI_CLIPPY_WARNINGS") == "1"
-raw = open("/tmp/rustc-raw.out", encoding="utf-8", errors="replace").read()
+out_path, args_path = sys.argv[1], sys.argv[2]
+raw = open(out_path, encoding="utf-8", errors="replace").read()
+args = open(args_path, encoding="utf-8", errors="replace").read()
 
 OURS = ("crates/", "apps/", "voice-packs/", "scripts/")
+OURS_EXTERN = tuple(f"--extern {n}=" for n in ("vocal_core", "voice_pack", "chiti_voice_cli"))
+MATCH = bool(re.search(r"--crate-name[= ](vocal_core|voice_pack|chiti_voice)\b", args))
+WANT_WARNINGS = os.environ.get("CI_CLIPPY_WARNINGS") == "1"
 
 
 def is_ours(d):
     spans = d.get("spans") or []
     if spans:
         # A span is authoritative: a diagnostic inside a registry crate is never ours,
-        # even while we are compiling one of our own crates (it was pulled in by us).
+        # even while it is pulled in by one of our compilations.
         return any((s.get("file_name") or "").startswith(OURS) for s in spans)
-    # No location at all (E0463 "can't find crate", link errors, E0601): the crate-name
-    # list is not enough, because integration tests / examples / benches compile under
-    # their own names. A target that receives one of our crates as `--extern` is ours.
-    if MATCH:
-        return True
-    try:
-        args = open("/tmp/rustc-wrapper-args", encoding="utf-8", errors="replace").read()
-    except OSError:
-        return False
-    return any(f"--extern {name}=" in args for name in ("vocal_core", "voice_pack", "chiti_voice_cli"))
+    # No location at all (E0463 "can't find crate", E0601, link errors). A target that
+    # receives one of our crates via --extern is one of ours, even when its --crate-name
+    # is `offline_synthesis` / `simple_speak` / `pack_security`.
+    return MATCH or any(e in args for e in OURS_EXTERN)
 
 
 seen, lines = set(), []
@@ -67,19 +69,15 @@ for line in raw.splitlines():
             continue
         lvl = d.get("level")
         # Clippy warnings only matter when they are fatal; that is exactly the run where
-        # the wrapped program is clippy-driver, which is when we enable them here.
-        if lvl == "error":
-            keep = True
-        elif lvl == "warning" and WANT_WARNINGS:
-            keep = True
-        else:
-            keep = False
-        if not keep or not is_ours(d):
+        # the wrapped program is clippy-driver, which is when they are enabled here.
+        if lvl != "error" and not (lvl == "warning" and WANT_WARNINGS):
+            continue
+        if not is_ours(d):
             continue
         msg = (d.get("message") or "").replace("\n", " ").strip()
         if not msg or msg.startswith("aborting due to"):
             continue
-        code = ((d.get("code") or {}).get("code") or "")
+        code = ((d.get("code") or {}).get("code") or "error")
         spans = [s for s in (d.get("spans") or []) if s.get("is_primary")] or (d.get("spans") or [])
         loc = ""
         if spans:
@@ -89,36 +87,33 @@ for line in raw.splitlines():
         if key in seen:
             continue
         seen.add(key)
-        head = code if code else "error"
-        lines.append(f"{head} {loc}: {msg}" if loc else f"{head}: {msg}")
+        lines.append(f"{code} {loc}: {msg}" if loc else f"{code}: {msg}")
     else:
-        # Plain-text mode (cargo run without --error-format=json, e.g. build scripts).
-        m = re.match(r"^((?:error|warning)(?:\[[EW]\d+\])?[:!].{0,300})", line)
+        # Plain-text mode (build scripts, `--print` probes, older cargo).
+        m = re.match(r"^((?:error|warning)(?:\[[EW]\d+\])?!?:?.{0,300})", line)
         if m and (MATCH or WANT_WARNINGS) and m.group(1) not in seen:
             seen.add(m.group(1))
             lines.append(m.group(1))
 
 if not lines:
-    if MATCH:
-        # Cargo failed on one of our crates but nothing was parseable: surface the tail.
-        lines = ["unparsed failure; stderr tail: " + raw[-1000:].replace("\n", "|")]
+    if MATCH or any(e in args for e in OURS_EXTERN):
+        # One of our targets failed and nothing was parseable: surface the tail.
+        lines = ["OUR-TARGET failure, unparsed; stderr tail: " + raw[-900:].replace("\n", "|")]
     else:
-        # A dependency failed to build. That is not our source's fault, but it is our
-        # problem: the live matrix builds rust=[stable,nightly], so a nightly-only break
-        # in someone else's crate reddens this repo's build gate with nothing to read.
-        # Surface the first error line and the tail so the cause is identifiable.
+        # A dependency failed. Not our source's fault, but it reddens this repo's gate
+        # (the live matrix builds rust=[stable,nightly] and has no cache key for the other
+        # one), so show the first error line rather than staying silent.
         m = re.search(r"^error(?:\[[EW]\d+\])?!?:? ?(.{0,300})", raw, re.M)
         head = m.group(1).strip() if m else ""
         if not head and "error" not in raw.lower():
             raise SystemExit(0)
-        crate = re.search(r"--crate-name[= ](\S+)", open("/tmp/rustc-wrapper-args").read())
-        name = crate.group(1) if crate else "?"
-        tag = "DEPENDENCY" if not MATCH else "OUR-TARGET"
-        lines = [f"{tag} {name}: {head or 'no error line'}; tail: " + raw[-700:].replace("\n", "|")]
+        crate = re.search(r"--crate-name[= ](\S+)", args)
+        lines = [f"DEPENDENCY {crate.group(1) if crate else '?'}: {head or 'no error line'}; "
+                 f"tail: {raw[-700:]}".replace("\n", "|")]
 
 # GitHub keeps at most 10 annotations per check run, so pack the list into a few long
 # chunks instead of emitting one annotation per diagnostic.
-text = " ;; ".join(t.replace("\r", " ").replace("%", "25") for t in lines)
+text = " ;; ".join(t.replace("\r", " ").replace("%", "25").replace("\n", " ") for t in lines)
 chunks = [text[i:i + 1300] for i in range(0, len(text), 1300)] or ["none"]
 for i, c in enumerate(chunks[:8]):
     print(f"::error::RUSTC[{i + 1}/{len(chunks)}] {c}", flush=True)
@@ -126,4 +121,5 @@ print(f"::notice::RUSTC count={len(lines)} chunks={len(chunks)} clippy={int(WANT
 PY
 fi
 
+rm -rf "$scratch"
 exit "$code"
