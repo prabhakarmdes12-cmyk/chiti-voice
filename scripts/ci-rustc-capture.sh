@@ -11,6 +11,10 @@
 
 printf '%s' "$*" | grep -Eq -- '--crate-name[= ](vocal_core|voice_pack|chiti_voice)' && MATCH=1 || MATCH=0
 
+case "$1" in
+  *clippy-driver*) CI_CLIPPY_WARNINGS=1; export CI_CLIPPY_WARNINGS ;;
+esac
+
 "$@" > /tmp/rustc-raw.out 2>&1
 code=$?
 cat /tmp/rustc-raw.out
@@ -29,7 +33,16 @@ for line in raw.splitlines():
             d = json.loads(line)
         except Exception:
             continue
-        if d.get("level") != "error":
+        lvl = d.get("level")
+        # Clippy warnings only matter when they are fatal (the lint job uses -D
+        # warnings), and that is exactly when a clippy-driver run shows up here.
+        if lvl == "error":
+            want = True
+        elif lvl == "warning" and os.environ.get("CI_CLIPPY_WARNINGS") == "1":
+            want = True
+        else:
+            want = False
+        if not want:
             continue
         msg = (d.get("message") or "").replace("\n", " ")
         code = ((d.get("code") or {}).get("code") or "")
@@ -44,7 +57,7 @@ for line in raw.splitlines():
         seen.add(key)
         lines.append(f"{code} {loc}: {msg}" if loc else f"{code}: {msg}")
     else:
-        m = re.match(r"^(error(?:\[E\d+\])?[:!].{0,300})", line)
+        m = re.match(r"^(error(?:\[E\d+\])?[:!].{0,300}|warning\[E?\w*\]:?\s.{0,300})", line)
         if m and m.group(1) not in seen:
             seen.add(m.group(1))
             lines.append(m.group(1))

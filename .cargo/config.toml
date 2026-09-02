@@ -1,5 +1,10 @@
-# TEMPORARY: diagnostic rustc wrapper so CI errors are readable through the checks API
-# (this sandbox cannot reach the Actions log host). Remove together with
-# scripts/ci-rustc-capture.sh once the workspace builds green.
+# TEMPORARY — CI diagnostics only. DELETE THIS FILE once the workspace is green.
+# See scripts/ci-rustc-capture.sh and scripts/ci-test-capture.sh for why they exist.
+
 [build]
+# Runner-absolute path: this breaks non-Linux builds, which is acceptable while the
+# diagnostics are in place and is the reason the file must not survive.
 rustc-wrapper = "/home/runner/work/chiti-voice/chiti-voice/scripts/ci-rustc-capture.sh"
+
+[target.x86_64-unknown-linux-gnu]
+runner = "scripts/ci-test-capture.sh"
