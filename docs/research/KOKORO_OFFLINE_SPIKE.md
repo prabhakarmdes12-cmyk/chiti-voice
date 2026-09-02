@@ -122,6 +122,15 @@ English clips in `assets/offline-spike/` came from espeak-ng; one came from
 **nothing else** — so the licence decision in §3 has a clean answer for the personas that
 speak English and an open question for KASHI.
 
+**7. Characters outside the 115-symbol vocab are silently dropped — and that is upstream
+behaviour, not a bug I introduced.** `encode` applies the whitelist, so an espeak IPA symbol the
+table lacks (e.g. `ɫ`, dark *l*, which `en-us` does emit) disappears before synthesis rather than
+raising an error. The reference fixture happens to need no stripping — all 84 characters of its
+phoneme string are in the vocabulary, which the `reference_phonemes_are_already_canonical` test
+asserts — but nothing in the pipeline *guarantees* that for the next sentence. A real
+`hi`/`en-IN` G2P mapping (ROADMAP §2 Step 4) is therefore not a polish item: it is the component
+that decides whether phonemes arrive complete.
+
 ## What this does not prove
 
 * **Not that it is good.** No human listened for quality; MOS is unmeasured. The clips in
