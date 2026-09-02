@@ -12,14 +12,10 @@ use std::path::Path;
 ///
 /// Input is assumed to be in `[-1.0, 1.0]`; values outside that range are clamped.
 pub fn f32_bytes_to_pcm16(pcm_f32: &[u8]) -> Vec<u8> {
-    // as_chunks::<4>() splits at compile-time-known size and hands back the leftover
-    // tail explicitly, instead of silently ignoring a truncated final sample.
-    let (chunks, tail) = pcm_f32.as_chunks::<4>();
-    debug_assert!(
-        tail.is_empty(),
-        "{} trailing byte(s) ignored while converting f32 PCM",
-        tail.len()
-    );
+    // as_chunks::<4>() instead of chunks_exact(4): same semantics, and the discarded tail
+    // is named so the intent is legible. A short buffer means a truncated sample, which we
+    // deliberately drop rather than fabricate — locked by ignores_trailing_partial_sample.
+    let (chunks, _trailing) = pcm_f32.as_chunks::<4>();
     let mut out = Vec::with_capacity(chunks.len() * 2);
     for chunk in chunks {
         let sample = f32::from_le_bytes(*chunk);

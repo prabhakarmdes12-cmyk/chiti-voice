@@ -113,7 +113,14 @@ async fn piper_engine_cannot_synthesize_and_says_so() {
         .expect_err("PiperEngine::synthesize must fail until ONNX inference exists");
     assert_eq!(err.code(), VoiceErrorCode::EngineNotAvailable);
 
-    assert!(!vocal_core::REAL_SYNTHESIS_AVAILABLE);
+    // Tied to the observed refusal rather than asserted on its own: `assert!(!CONST)`
+    // can never fail for the right reason, and the whole value of the flag is that it
+    // moves in lockstep with an engine that actually synthesizes.
+    assert_eq!(
+        vocal_core::REAL_SYNTHESIS_AVAILABLE,
+        !matches!(err.code(), VoiceErrorCode::EngineNotAvailable),
+        "REAL_SYNTHESIS_AVAILABLE and PiperEngine::synthesize disagree; they must change in the same commit"
+    );
 }
 
 #[tokio::test]
@@ -295,18 +302,14 @@ fn pipeline_and_normalizer_are_honest_about_being_stubs() {
 
 fn futures_block_on<F: std::future::Future>(fut: F) -> F::Output {
     let mut fut = std::pin::pin!(fut);
-    let waker = std::task::Waker::from(std::sync::Arc::new(NoopWake));
-    let mut cx = std::task::Context::from_waker(&waker);
+    // Waker::noop() is const-stable since 1.85; the hand-rolled Arc<dyn Wake> it
+    // replaces was written when the MSRV predates it.
+    let mut cx = std::task::Context::from_waker(std::task::Waker::noop());
     loop {
         if let std::task::Poll::Ready(v) = fut.as_mut().poll(&mut cx) {
             return v;
         }
     }
-}
-
-struct NoopWake;
-impl std::task::Wake for NoopWake {
-    fn wake(self: std::sync::Arc<Self>) {}
 }
 
 fn walk(dir: &str) -> Vec<String> {

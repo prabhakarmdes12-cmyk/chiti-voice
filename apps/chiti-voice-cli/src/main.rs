@@ -264,6 +264,10 @@ fn discover(dir: &Path, limits: &PackLimits) -> (BTreeMap<String, VoicePack>, Ve
     (packs, broken)
 }
 
+/// One flat parameter list because every argument is a parsed CLI option: wrapping them in
+/// a struct would add a type without removing a coupling, and clap already owns the
+/// grouping (`#[command(flatten)]`). The count is the lint's complaint, not a design smell.
+#[allow(clippy::too_many_arguments)]
 async fn cmd_speak(
     dir: &Path,
     limits: &PackLimits,
