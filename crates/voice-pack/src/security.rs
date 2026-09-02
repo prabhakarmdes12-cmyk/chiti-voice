@@ -398,14 +398,11 @@ impl PackValidator {
 
 /// Case-insensitive hex comparison that never short-circuits on length alone.
 fn checksum_eq(computed: &str, declared: &str) -> bool {
-    let c = computed.as_bytes();
-    let d = declared.as_bytes();
-    if c.len() != d.len() {
-        return false;
-    }
-    c.iter()
-        .zip(d.iter())
-        .all(|(a, b)| a.to_ascii_lowercase() == b.to_ascii_lowercase())
+    // Digests are compared case-insensitively because some tooling emits uppercase hex.
+    // ASCII-only folding is deliberate, not a shortcut: Unicode case-folding is not
+    // injective (dotless/dotted i, long s, final sigma), so a Unicode-aware comparison
+    // would let an attacker's spelling collide with a declared digest.
+    computed.eq_ignore_ascii_case(declared)
 }
 
 impl Default for PackValidator {

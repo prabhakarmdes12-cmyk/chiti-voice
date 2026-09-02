@@ -198,7 +198,10 @@ mod tests {
             &((written as u32 - 8).to_le_bytes()),
             "RIFF chunk size must equal file size - 8"
         );
-        assert_eq!(&bytes[40..44], b"data");
+        // Canonical layout: RIFF(0..4) size(4..8) WAVE(8..12) "fmt "(12..16)
+        // fmt-chunk 16..36, "data"(36..40) data-size(40..44), payload(44..).
+        assert_eq!(&bytes[36..40], b"data");
+        assert_eq!(&bytes[40..44], &2u32.to_le_bytes(), "payload is one s16 sample");
         assert_eq!(&bytes[44..46], [0u8, 0u8], "one silent sample");
         let _ = std::fs::remove_dir_all(&dir);
     }
