@@ -21,6 +21,7 @@ serde_json = "1.0"
 thiserror = "1.0"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json"] }
+anyhow = "1.0"
 zip = "0.6"
 sha2 = "0.10"
 hex = "0.4"
@@ -40,6 +41,12 @@ clap = { version = "4.5", features = ["derive", "env"] }
 # `mockito` (HTTP mocking) was removed from this list: it was declared and used by
 # nothing, and an HTTP test double in a crate whose core invariant is "no network
 # client" invites the wrong dependency later.
+
+# NOTE: every `foo.workspace = true` in a member manifest MUST have a matching entry
+# here. A missing entry is not a warning — it fails every cargo command in the
+# workspace (including `cargo metadata`), on every platform, in ~5 seconds. This
+# regression happened for real: `anyhow` was dropped from this table while
+# apps/chiti-voice-cli and crates/voice-pack still referenced it.
 
 [profile.release]
 opt-level = 3

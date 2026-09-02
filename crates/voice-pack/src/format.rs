@@ -6,7 +6,6 @@
 //! - Persona configuration
 
 use serde::{Deserialize, Serialize};
-use std::path::Path;
 
 /// Represents a loaded voice pack
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -32,8 +32,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  preflight:
+    name: Manifest pre-flight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fast, readable version of a failure that otherwise looks like an inscrutable
+      # 5-second cargo error on every OS at once: a member declaring `foo.workspace =
+      # true` for a dependency the root table does not define breaks the ENTIRE
+      # workspace (this happened: `anyhow` was dropped from [workspace.dependencies]).
+      - name: Every workspace dependency reference must resolve
+        run: |
+          python3 - <<'PYEOF'
+          import sys, tomllib
+          from pathlib import Path
+          root = tomllib.load(open("Cargo.toml", "rb"))
+          defined = set(root["workspace"].get("dependencies", {}))
+          bad = []
+          for p in sorted(Path(".").rglob("Cargo.toml")):
+              if p == Path("Cargo.toml"):
+                  continue
+              t = tomllib.load(open(p, "rb"))
+              for table in ("dependencies", "dev-dependencies", "build-dependencies"):
+                  for name, spec in (t.get(table) or {}).items():
+                      if isinstance(spec, dict) and spec.get("workspace") and name not in defined:
+                          bad.append(f"{p}: [{table}] {name}.workspace = true, but the root [workspace.dependencies] does not define {name!r}")
+              # declared paths must exist
+              for kind in ("bin", "example", "test"):
+                  for entry in t.get(kind) or []:
+                      if "path" in entry:
+                          f = p.parent / entry["path"]
+                          if not f.exists():
+                              bad.append(f"{p}: [[{kind}]] path {entry['path']!r} does not exist")
+          if bad:
+              print("::error::cargo manifest pre-flight failed")
+              for b in bad:
+                  print("  -", b)
+              sys.exit(1)
+          print("manifests consistent: workspace deps resolve, declared bin/example/test paths exist")
+          PYEOF
+
   build:
     name: Build (${{ matrix.os }})
+    needs: preflight
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
