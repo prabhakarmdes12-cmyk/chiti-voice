@@ -124,7 +124,10 @@ mod tests {
     #[test]
     fn test_error_code_strings() {
         assert_eq!(VoiceErrorCode::VoiceNotFound.as_str(), "VOICE_NOT_FOUND");
-        assert_eq!(VoiceErrorCode::PackChecksumFailed.as_str(), "PACK_CHECKSUM_FAILED");
+        assert_eq!(
+            VoiceErrorCode::PackChecksumFailed.as_str(),
+            "PACK_CHECKSUM_FAILED"
+        );
     }
 
     #[test]
@@ -163,7 +166,8 @@ impl From<voice_pack::loader::LoadError> for VoiceError {
             LoadError::LimitExceeded(_) => VoiceErrorCode::PackSizeExceeded,
             LoadError::ValidationFailed(m) => {
                 let m = m.to_lowercase();
-                if m.contains("traversal") || m.contains("absolute path") || m.contains("null byte") {
+                if m.contains("traversal") || m.contains("absolute path") || m.contains("null byte")
+                {
                     VoiceErrorCode::PackPathTraversal
                 } else if m.contains("executable") {
                     VoiceErrorCode::PackExecutableContent
@@ -201,7 +205,9 @@ mod pack_error_mapping_tests {
             "a manifest that fails to match the schema is a schema mismatch, not a parse error"
         );
         assert_eq!(
-            mapped(LoadError::InvalidManifest("expected value at line 1 column 1".into())),
+            mapped(LoadError::InvalidManifest(
+                "expected value at line 1 column 1".into()
+            )),
             VoiceErrorCode::PackInvalidFormat,
             "unparseable JSON has no schema to disagree with"
         );
@@ -210,11 +216,15 @@ mod pack_error_mapping_tests {
             VoiceErrorCode::PackSizeExceeded
         );
         assert_eq!(
-            mapped(LoadError::ValidationFailed("Path traversal not allowed: ../x".into())),
+            mapped(LoadError::ValidationFailed(
+                "Path traversal not allowed: ../x".into()
+            )),
             VoiceErrorCode::PackPathTraversal
         );
         assert_eq!(
-            mapped(LoadError::ValidationFailed("Checksum mismatch for model.onnx".into())),
+            mapped(LoadError::ValidationFailed(
+                "Checksum mismatch for model.onnx".into()
+            )),
             VoiceErrorCode::PackChecksumFailed
         );
         assert_eq!(

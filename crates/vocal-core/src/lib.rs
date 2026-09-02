@@ -60,7 +60,10 @@ mod tests {
         let mut engine = PiperEngine::new();
         engine.initialize().await.unwrap();
         let refuses = engine
-            .synthesize(&crate::synthesis::SynthesisRequest::new("tara", "one sentence"))
+            .synthesize(&crate::synthesis::SynthesisRequest::new(
+                "tara",
+                "one sentence",
+            ))
             .await
             .is_err();
         assert_eq!(

@@ -1,10 +1,3 @@
-//! Chiti Voice CLI — load `.cvpack` voices, verify them, and synthesize.
-//!
-//! This is the reference consumer of `vocal-core` + `voice-pack`. It deliberately
-//! refuses to pretend: if no speech backend is compiled in, `speak` tells you the
-//! output is silence instead of printing nothing.
-//!
-//! Exit codes: 0 success, 1 runtime/usage failure.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
