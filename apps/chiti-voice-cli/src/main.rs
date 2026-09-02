@@ -397,7 +397,7 @@ async fn cmd_speak(
         None => request,
     };
 
-    info!("synthesizing {} chars with engine={format}", request.text.len());
+    info!("synthesizing {} chars with format {format:?}", request.text.len());
     let response = engine_impl.synthesize(&request).await?;
     engine_impl.dispose().await?;
 
@@ -465,7 +465,10 @@ fn report_prosody(pack: &VoicePack, intent: Option<&str>, rate: f32, pitch: f32)
         persona.display_name, persona.default_rate, persona.default_pitch
     );
 
-    match (intent, persona.intent_profiles.get(intent)) {
+    // Look the intent up with the inner &str; `intent` itself is an Option, and
+    // HashMap::get takes a borrowed key, not an Option. (E0308)
+    let profile = intent.and_then(|name| persona.intent_profiles.get(name));
+    match (intent, profile) {
         (Some(name), Some(profile)) => println!(
             "intent {name:?}: rate {:.2}, pitch {:.2}, energy {:.2}, pause_factor {:.2}",
             profile.rate, profile.pitch, profile.energy, profile.pause_factor
