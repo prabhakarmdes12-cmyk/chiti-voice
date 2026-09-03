@@ -1,0 +1,6 @@
+# TEMPORARY -- one CI cycle only. See scripts/ci-rustc-wrapper.sh: this sandbox has no Rust toolchain and
+# cannot read Actions logs, so `clippy -D warnings` is red with no reason attached, and the wrapper turns
+# rustc/clippy diagnostics into check-run annotations. It breaks the Windows legs (they cannot exec a bash
+# script), which is why it is deleted in the next commit whatever it learns.
+[build]
+rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"
