@@ -281,7 +281,17 @@ jobs:
       - name: Capability statement must match the code
         run: |
           set -euo pipefail
-          AVAIL=$(grep -o 'REAL_SYNTHESIS_AVAILABLE: *\(true\|false\)' crates/vocal-core/src/lib.rs | tail -1 | grep -o '\(true\|false\)$')
+          # Same lesson as the step below, applied here too: the source declares
+          # `REAL_SYNTHESIS_AVAILABLE: bool = false`, so a grep that expects the value immediately
+          # after the name matched nothing, and under `set -euo pipefail` this step died on its
+          # first line — the job could never reach either check. Read the flag once, permissively,
+          # and treat an unreadable flag as an error rather than a skip.
+          AVAIL=$(grep -E 'REAL_SYNTHESIS_AVAILABLE: *(bool *)?=' crates/vocal-core/src/lib.rs \
+                  | tail -1 | grep -oE '(true|false)' | tail -1 || true)
+          if [ -z "$AVAIL" ]; then
+            echo "::error::could not read REAL_SYNTHESIS_AVAILABLE from crates/vocal-core/src/lib.rs"
+            exit 1
+          fi
           echo "vocal_core::REAL_SYNTHESIS_AVAILABLE = $AVAIL"
           if [ "$AVAIL" = "false" ]; then
             grep -q "No audible voice" README.md || {
