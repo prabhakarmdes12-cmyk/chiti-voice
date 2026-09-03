@@ -23,10 +23,18 @@ fn temp_dir(tag: &str) -> PathBuf {
     dir
 }
 
-/// Runs the sample with `--out` pointed into a private temp dir, returning (code, stdout, stderr).
-fn run(tag: &str, args: &[&str]) -> (Option<i32>, String, String) {
+/// The corpus the sample ships with, as an owned path string for argv.
+fn fixture_lines() -> String {
+    in_repo("fixtures/lines.txt").to_string_lossy().into_owned()
+}
+
+/// Runs the sample into a private temp dir and returns (code, stdout, stderr, written WAV bytes).
+/// The bytes are read back *inside* the call: a test that runs twice into one directory has to
+/// snapshot each artifact before the next run overwrites it.
+fn run_capturing(tag: &str, args: &[&str]) -> (Option<i32>, String, String, Option<Vec<u8>>) {
     let dir = temp_dir(tag);
     let out = dir.join("sample-out.wav");
+    let _ = std::fs::remove_file(&out);
     let output = Command::new(binary())
         .args(args)
         .arg("--out")
@@ -37,7 +45,13 @@ fn run(tag: &str, args: &[&str]) -> (Option<i32>, String, String) {
         output.status.code(),
         String::from_utf8_lossy(&output.stdout).into_owned(),
         String::from_utf8_lossy(&output.stderr).into_owned(),
+        std::fs::read(&out).ok(),
     )
+}
+
+fn run(tag: &str, args: &[&str]) -> (Option<i32>, String, String) {
+    let (code, stdout, stderr, _) = run_capturing(tag, args);
+    (code, stdout, stderr)
 }
 
 fn value_after<'a>(haystack: &'a str, key: &str) -> Option<&'a str> {
@@ -126,23 +140,35 @@ fn long_input_is_planned_into_several_chunks() {
 
 #[test]
 fn the_same_input_produces_the_same_report_and_file() {
+    // Both runs go into the *same* directory on purpose. The report prints the output path, so two
+    // separate temp dirs make stdout differ by construction -- an earlier version of this test compared
+    // "det1" against "det2" and failed on the path, which was a bug in the test rather than in the
+    // render. Same path, and the WAV is read back between runs so nothing overwrites an artifact
+    // mid-comparison.
     let pack = shipped_pack();
-    let lines = in_repo("fixtures/lines.txt");
-    let lines = lines.to_string_lossy().into_owned();
-    let (_, first, _) = run("det1", &["--pack", pack.as_str(), "--lines", lines.as_str()]);
-    let (_, second, _) = run("det2", &["--pack", pack.as_str(), "--lines", lines.as_str()]);
+    let lines = fixture_lines();
+    let args = ["--pack", pack.as_str(), "--lines", lines.as_str()];
+
+    let (code, first, err, first_wav) = run_capturing("repro", &args);
+    assert_eq!(code, Some(0), "first run failed: {err}");
+    let first_wav = first_wav.expect("the sample must write the file named by --out");
+
+    let (code, second, err, second_wav) = run_capturing("repro", &args);
+    assert_eq!(code, Some(0), "second run failed: {err}");
+
     assert_eq!(
         first, second,
         "the report differs between identical runs, so a render cannot be cited by its numbers"
     );
-    assert!(first.contains("silent=true") || first.contains("silent=false"));
-
-    let a = temp_dir("det1").join("sample-out.wav");
-    let b = temp_dir("det2").join("sample-out.wav");
-    if let (Ok(a), Ok(b)) = (std::fs::read(&a), std::fs::read(&b)) {
-        assert_eq!(a.len(), b.len(), "the written WAVs differ in length");
-        assert_eq!(a, b, "the written WAVs differ in bytes");
-    }
+    assert!(
+        first.contains("silent=true") || first.contains("silent=false"),
+        "the report must say whether the render is silence: {first}"
+    );
+    assert_eq!(
+        first_wav,
+        second_wav.expect("the second run must also write its WAV"),
+        "the written WAVs differ byte-for-byte under identical input"
+    );
 }
 
 #[test]
