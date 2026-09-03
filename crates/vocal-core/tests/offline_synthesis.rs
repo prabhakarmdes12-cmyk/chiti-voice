@@ -399,9 +399,38 @@ fn shipped_personas_can_spell_their_own_overrides() {
         let Some(persona) = manifest.persona.as_ref() else {
             continue;
         };
-        vocal_core::Persona::from_pack(persona)
+        let engine = vocal_core::Persona::from_pack(persona);
+        engine
             .check_overrides_encodable()
             .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
+
+        // The declared policy is then *used*, not merely parsed: a long input has to plan inside it, with
+        // every utterance's style row equal to its length. A pack could otherwise declare a window the
+        // model does not have (loaded happily, truncated at synthesis) or numbers so incoherent that no
+        // chunk could ever close -- neither of which a field-presence check would notice.
+        let policy = engine
+            .chunking_policy()
+            .unwrap_or_else(|e| panic!("{}: declared chunking policy is unusable: {e}", manifest_path.display()));
+        let pieces: Vec<vocal_core::Piece> = (0..200)
+            .flat_map(|_| "slovo na proveri, to je dovoljno dugo.".split_whitespace().map(vocal_core::Piece::phonemes))
+            .collect();
+        let plan = vocal_core::plan_pieces(&pieces, &policy)
+            .unwrap_or_else(|e| panic!("{}: planning under {policy:?} failed: {e}", manifest_path.display()));
+        assert!(plan.len() > 1, "{}: 200 sentences must not fit one chunk", manifest_path.display());
+        for utterance in &plan.utterances {
+            assert!(
+                utterance.units <= policy.max_units,
+                "{}: an utterance of {} tokens exceeds the pack's own ceiling of {}",
+                manifest_path.display(),
+                utterance.units,
+                policy.max_units
+            );
+            assert_eq!(
+                utterance.style_row, utterance.units,
+                "{}: the row must be the caller's length, or the policy shifted prosody silently",
+                manifest_path.display()
+            );
+        }
         checked += 1;
     }
     assert!(

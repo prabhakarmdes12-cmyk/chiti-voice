@@ -44,6 +44,14 @@ pub struct Persona {
     /// True when the pitch offset is already realised in the persona's style vector.
     #[serde(default)]
     pub pitch_baked_into_style: bool,
+    /// Chunking policy the pack declares; `None` means [`PlanPolicy::default`].
+    ///
+    /// This is the one persona field that changes *what the voice sounds like* without changing any
+    /// number the graph is fed: the style row is selected by utterance token count, so the policy decides
+    /// the row. It is kept as the pack's own declaration rather than a resolved value so that a render can
+    /// be reproduced from the pack alone.
+    #[serde(default)]
+    pub chunking: Option<voice_pack::ChunkingConfig>,
     /// Loudness post-stage; `None` means the crate defaults.
     #[serde(default)]
     pub loudness: Option<voice_pack::LoudnessConfig>,
@@ -66,6 +74,7 @@ impl Persona {
             default_pitch: config.default_pitch,
             pitch_baked_into_style: config.pitch_baked_into_style,
             loudness: config.loudness,
+            chunking: config.chunking,
             pronunciation_overrides: config.pronunciation_overrides.clone(),
             intent_profiles: config
                 .intent_profiles
@@ -83,6 +92,25 @@ impl Persona {
                 })
                 .collect(),
         }
+    }
+
+    /// The pack's declared chunking policy, resolved against the window this engine actually carries.
+    ///
+    /// `voice-pack` checks that the two numbers are coherent; only this crate can check them against the
+    /// model's token limit, because only it knows that limit -- so the bound is applied here, in the one
+    /// place it is defined, and a pack that declares a window the graph does not have is a load error
+    /// rather than a truncation. A pack that declares nothing gets [`PlanPolicy::default`], which is what
+    /// every measurement in this repo was made under.
+    #[must_use = "a pack whose policy exceeds the model's window must not be silently clamped"]
+    pub fn chunking_policy(&self) -> crate::error::VoiceResult<crate::utterance_plan::PlanPolicy> {
+        let policy = match self.chunking {
+            Some(declared) => crate::utterance_plan::PlanPolicy {
+                max_units: declared.max_units,
+                min_chunk_units: declared.min_chunk_units,
+            },
+            None => crate::utterance_plan::PlanPolicy::default(),
+        };
+        policy.validate().map(|()| policy)
     }
 
     /// Refuse a persona whose own pronunciation fixes this engine cannot spell.
@@ -300,6 +328,7 @@ mod tests {
                 peak_ceiling: 0.98,
                 max_gain_db: 12.0,
             }),
+            chunking: Some(voice_pack::ChunkingConfig { max_units: 509, min_chunk_units: 8 }),
             pronunciation_overrides: HashMap::from([("chiti".to_string(), "ˈtʃɪti".to_string())]),
             intent_profiles: HashMap::from([(
                 "GREETING".to_string(),
@@ -438,5 +467,54 @@ mod tests {
             "the whole list, so an author fixes them in one pass: {msg}"
         );
         assert!(msg.contains("tara"), "and which persona is at fault: {msg}");
+    }
+
+    #[test]
+    fn a_declared_chunking_policy_is_resolved_against_the_window_not_guessed() {
+        // The pack's pair arrives intact...
+        let declared = Persona::from_pack(&pack_persona());
+        let policy = declared.chunking_policy().expect("509/8 is inside the window");
+        assert_eq!(policy.max_units, 509);
+        assert_eq!(policy.min_chunk_units, 8);
+
+        // ...no policy at all means the engine default, which is the one every measurement here used...
+        let mut config = pack_persona();
+        config.chunking = None;
+        assert_eq!(
+            Persona::from_pack(&config).chunking_policy().unwrap(),
+            crate::utterance_plan::PlanPolicy::default(),
+            "absent must not mean off, and must not mean a second set of numbers"
+        );
+
+        // ...and a policy above the window is refused here rather than truncated in the encoder, which
+        // is the whole reason the bound lives in this crate and not in the pack format.
+        let mut config = pack_persona();
+        config.chunking = Some(voice_pack::ChunkingConfig { max_units: 4096, min_chunk_units: 8 });
+        let err = Persona::from_pack(&config)
+            .chunking_policy()
+            .expect_err("a 4096-token chunk does not exist in a 512-slot model");
+        assert!(err.to_string().contains("510"), "say what the ceiling is: {err}");
+
+        // Incoherence is caught by the same call, so an engine cannot get a policy that folds every
+        // chunk into its predecessor.
+        let mut config = pack_persona();
+        config.chunking = Some(voice_pack::ChunkingConfig { max_units: 8, min_chunk_units: 9 });
+        assert!(Persona::from_pack(&config).chunking_policy().is_err());
+    }
+
+    #[test]
+    fn the_shipped_persona_still_loads_with_a_policy_and_plans_within_it() {
+        use crate::utterance_plan::{Piece, plan_pieces};
+
+        let persona = Persona::from_pack(&pack_persona());
+        let policy = persona.chunking_policy().unwrap();
+        let pieces: Vec<Piece> =
+            (0..200).flat_map(|_| "slovo na proveri, to je dovoljno dugo.".split_whitespace().map(Piece::phonemes)).collect();
+        let plan = plan_pieces(&pieces, &policy).expect("a declared policy must always be plannable");
+        assert!(plan.len() > 1, "200 sentences do not fit in one chunk");
+        for utterance in &plan.utterances {
+            assert!(utterance.units <= policy.max_units);
+            assert_eq!(utterance.style_row, utterance.units, "the row stays the caller's length");
+        }
     }
 }

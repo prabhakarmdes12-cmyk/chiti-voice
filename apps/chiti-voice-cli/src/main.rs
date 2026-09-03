@@ -598,11 +598,12 @@ async fn cmd_verify(dir: &Path, limits: &PackLimits, pack_path: &Path) -> Result
     // it. Spelled out here rather than assumed, because `verify` is what a pack author runs.
     match manifest.persona.as_ref() {
         Some(persona) => {
+            let engine = vocal_core::Persona::from_pack(persona);
             let table = vocal_core::phoneme_tokens::SYMBOLS
                 .iter()
                 .filter(|c| **c != '\0')
                 .count();
-            match vocal_core::Persona::from_pack(persona).check_overrides_encodable() {
+            match engine.check_overrides_encodable() {
                 Ok(()) => {
                     println!("  overrides            spellable in the engine's {table}-symbol table")
                 }
@@ -611,8 +612,22 @@ async fn cmd_verify(dir: &Path, limits: &PackLimits, pack_path: &Path) -> Result
                     return Err(anyhow::Error::from(e));
                 }
             }
+            // Printed as numbers rather than a tick, because a rendering is only reproducible with the
+            // policy it was planned under: same pack, different chunking, different style row.
+            match engine.chunking_policy() {
+                Ok(policy) => println!(
+                    "  chunking             max_units={} min_chunk_units={}{}",
+                    policy.max_units,
+                    policy.min_chunk_units,
+                    if persona.chunking.is_some() { " (declared)" } else { " (engine default)" }
+                ),
+                Err(e) => {
+                    println!("  chunking             FAIL — {e}");
+                    return Err(anyhow::Error::from(e));
+                }
+            }
         }
-        None => println!("  overrides            (no persona declared)"),
+        None => println!("  persona              (none declared)"),
     }
 
     let (installed, _) = discover(dir, limits);

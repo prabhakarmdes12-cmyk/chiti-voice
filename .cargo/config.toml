@@ -1,0 +1,6 @@
+# TEMPORARY -- one CI cycle only. Two crates gained a struct field, a method and new tests, and this sandbox has no
+# Rust toolchain, so a compile error in `#[cfg(test)]` code would otherwise arrive as a red job with no
+# text in it. The wrapper turns rustc/clippy diagnostics into check-run annotations; Windows runners
+# cannot exec a bash script, so those legs go red meanwhile and this file is deleted next commit.
+[build]
+rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"

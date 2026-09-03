@@ -98,11 +98,27 @@ def build_persona(persona: str, md: str, recipe: dict, existing: dict) -> dict:
     base, intents = base_table(md, persona), intent_table(md, persona)
     style = recipe["sources"]
     loud = recipe.get("loudness") or {}
+    chunk = recipe.get("chunking") or {}
+    measured = recipe.get("measured") or {}
 
     check(persona, RATE_BAND[0] <= base["speed"] <= RATE_BAND[1], f"base Speed {base['speed']} outside the measured rate band")
     check(persona, -40.0 <= loud.get("target_dbfs", -20.0) <= -6.0, "loudness target outside -40..=-6 dBFS")
     check(persona, 0.0 < loud.get("peak_ceiling", 0.98) <= 0.999, "peak ceiling must leave headroom")
     check(persona, 0.0 < loud.get("max_gain_db", 12.0) <= 24.0, "max gain must be bounded")
+    if chunk:
+        check(persona, int(chunk.get("max_units", 0)) >= 1, "chunking.max_units must be >= 1 (0 leaves no room for an utterance)")
+        check(persona, int(chunk.get("min_chunk_units", 0)) >= 1, "chunking.min_chunk_units must be >= 1")
+        check(persona, int(chunk.get("min_chunk_units", 0)) <= int(chunk.get("max_units", 0)),
+              "chunking.min_chunk_units exceeds chunking.max_units")
+        # The reason a policy is declared at all: the render these numbers were measured from has to have
+        # been planned under it. A 5-unit tail in a chunk of its own reads a different style row than the
+        # same words inside a 90-unit chunk, so a persona citing F0 and phonemes/s measured under one
+        # policy and shipped under another is citing numbers that no longer describe it.
+        est = float(measured.get("phonemes_per_s", 0)) * float(measured.get("duration_s", 0))
+        check(persona, est <= int(chunk["max_units"]),
+              f"the measured render is ~{est:.0f} phonemes, above the declared ceiling of "
+              f"{chunk['max_units']}: it was therefore not produced in one chunk, so either the policy or "
+              "the measurements belong to a different persona")
     check(persona, base["pitch"] != 1.0, "pitch 1.0 is the multiplier/offset mix-up; neutral is 0.0")
     check(persona, all(0.0 <= v["energy"] <= 1.0 for v in intents.values()), "energy must be 0..=1")
     check(persona, all(RATE_BAND[0] <= v["speed"] <= RATE_BAND[1] for v in intents.values()), "an intent rate is outside 0.5..=1.6")
@@ -135,6 +151,8 @@ def build_persona(persona: str, md: str, recipe: dict, existing: dict) -> dict:
             "max_gain_db": round(float(loud.get("max_gain_db", 12.0)), 1),
         },
         "pronunciation_overrides": {"chiti": CHITI_IPA},
+        **({"chunking": {"max_units": int(chunk["max_units"]),
+                          "min_chunk_units": int(chunk["min_chunk_units"])}} if chunk else {}),
         "intent_profiles": {
             name: {
                 "rate": round(v["speed"], 3),

@@ -115,6 +115,21 @@ pub struct StyleWeight {
     pub weight: f32,
 }
 
+/// A persona's declared chunking policy -- the numbers `vocal_core::utterance_plan::PlanPolicy` takes.
+///
+/// Only coherence is checked here. The *bounds* depend on the model's token window, which belongs to the
+/// engine; restating 510 in the pack format would make a second source of truth for a number
+/// `vocal-core` already measures, and two sources of a table is how the last bug of this shape started.
+/// `Persona::chunking_policy` is where a declared pair meets the real window.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChunkingConfig {
+    /// Ceiling on content tokens per utterance, spaces between runs included.
+    pub max_units: usize,
+    /// Minimum size of a chunk: punctuation closes one at or above this, and a shorter tail folds back
+    /// into its predecessor when that stays inside `max_units`.
+    pub min_chunk_units: usize,
+}
+
 /// The loudness post-stage — the honest implementation of the specs' `Energy`, which is not an
 /// engine input. Defaults are shared with `vocal_core::audio_levels` and a test pins that they agree.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
@@ -176,6 +191,15 @@ pub struct PersonaConfig {
     /// Where the persona's 510 x 256 style matrix comes from.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<StyleConfig>,
+    /// How the engine draws utterance boundaries for this persona.
+    ///
+    /// Declared rather than inherited from a default, because the style row is selected by *utterance
+    /// length*: two builds that chunk one sentence differently read different rows, so a persona whose
+    /// measurements were taken inside a single chunk stops being that persona once something else splits
+    /// it. Absent means "whatever the engine defaults to" -- honest for a pack built before the slot
+    /// existed, and a claim a pack citing measurements should not leave unstated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chunking: Option<ChunkingConfig>,
     /// Loudness post-stage (the specs' `Energy`). Absent means the engine default, not "off": a
     /// release pack that ships a persona should say what it wants and be held to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -369,6 +393,25 @@ impl PackManifest {
                 return Err(format!(
                     "pronunciation_overrides[{word:?}] is malformed (value {} bytes, limit 256; key limit 64)",
                     phonemes.len()
+                ));
+            }
+        }
+
+        if let Some(chunking) = &self.chunking {
+            // Both numbers are token budgets, so 0 is not "unspecified" here -- it is a policy under
+            // which no utterance can exist. Reject it rather than let a default swallow the typo.
+            if chunking.max_units == 0 || chunking.min_chunk_units == 0 {
+                return Err(format!(
+                    "persona.chunking counts are token budgets and must be >= 1: max_units {}, \
+                     min_chunk_units {}",
+                    chunking.max_units, chunking.min_chunk_units
+                ));
+            }
+            if chunking.min_chunk_units > chunking.max_units {
+                return Err(format!(
+                    "persona.chunking.min_chunk_units {} exceeds max_units {}: the fold rule would then \
+                     merge every chunk into its predecessor, and punctuation could never close one",
+                    chunking.min_chunk_units, chunking.max_units
                 ));
             }
         }

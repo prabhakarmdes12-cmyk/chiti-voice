@@ -109,6 +109,44 @@ fn persona_no_style(inner: &str) -> String {
     )
 }
 
+#[test]
+fn a_declared_chunking_policy_must_be_coherent_even_though_the_window_is_not_its_business() {
+    // Absent is legitimate: a pack built before the slot existed means "engine default", and the
+    // compatibility claim is that it still loads.
+    let silent = persona(r#""style": { "source_voice": "af_heart" }"#);
+    let parsed = pack(&silent, MODEL_ONLY);
+    assert!(
+        parsed.persona.as_ref().expect("persona").chunking.is_none(),
+        "absent must stay absent rather than be filled in with a number the pack never claimed"
+    );
+    parsed.validate_persona().expect("no policy to check");
+
+    let declared = persona(
+        r#""chunking": { "max_units": 509, "min_chunk_units": 8 }"#,
+    );
+    pack(&declared, MODEL_ONLY)
+        .validate_persona()
+        .expect("a coherent pair is valid whatever the window turns out to be");
+
+    // 0 is not "unset": both numbers are token budgets, and a policy with no room for an utterance is a
+    // typo that a default would happily swallow.
+    let zero = persona(r#""chunking": { "max_units": 0, "min_chunk_units": 0 }"#);
+    let err = err_of(zero, MODEL_ONLY);
+    assert!(err.contains(">= 1"), "the message must state the floor: {err}");
+    assert!(err.contains("persona.chunking"), "and name the slot: {err}");
+
+    // Inverted bounds are self-evidently wrong, so they are caught here; a ceiling above the model's
+    // window is not, and is deliberately left to `vocal-core`, which owns the window.
+    let inverted = persona(r#""chunking": { "max_units": 8, "min_chunk_units": 9 }"#);
+    let err = err_of(inverted, MODEL_ONLY);
+    assert!(err.contains("min_chunk_units 9 exceeds max_units 8"), "{err}");
+
+    let too_big_for_the_model = persona(r#""chunking": { "max_units": 4096, "min_chunk_units": 8 }"#);
+    pack(&too_big_for_the_model, MODEL_ONLY)
+        .validate_persona()
+        .expect("4096 is the engine's problem to refuse, and this crate must not hardcode its window");
+}
+
 const MODEL_ONLY: &str = r#"{ "path": "model.onnx", "checksum_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "size_bytes": 10, "file_type": "model" }"#;
 
 const WITH_STYLE_FILE: &str = r#"{ "path": "model.onnx", "checksum_sha256": "0000000000000000000000000000000000000000000000000000000000000000", "size_bytes": 10, "file_type": "model" },

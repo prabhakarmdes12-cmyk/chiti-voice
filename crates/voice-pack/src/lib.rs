@@ -14,7 +14,8 @@ pub mod security;
 pub use format::VoicePack;
 pub use loader::{LoadError, LoadResult, PackLoader, MANIFEST_ENTRY};
 pub use manifest::{
-    FileType, IntentProfile, LoudnessConfig, PackFile, PackManifest, PersonaConfig, ProvenanceInfo,
+    ChunkingConfig, FileType, IntentProfile, LoudnessConfig, PackFile, PackManifest,
+    PersonaConfig, ProvenanceInfo,
     StyleConfig, StyleWeight, DEFAULT_LOUDNESS_TARGET_DBFS, DEFAULT_MAX_GAIN_DB, DEFAULT_PEAK_CEILING,
     STYLE_VECTOR_BYTES,
 };

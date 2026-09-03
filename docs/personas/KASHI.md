@@ -34,6 +34,12 @@ median F0. Expressiveness 0.42 is honoured almost by accident: blending style ve
 *flattens* pitch movement, which suits this persona and is exactly why it must not be used for Bobo.
 Hindi output additionally depends on espeak-ng's `hi` voice, whose phonemes here are unverified.
 
+Planned in one chunk, and that is a claim worth stating: the pack declares `persona.chunking` =
+`max_units` 509 / `min_chunk_units` 8, which is the policy `vocal_core::utterance_plan` runs under. It
+matters because the style row a chunk reads is its token count -- split the same sentence differently and
+the voice changes prosody, so the F0 and rate figures above describe the render only as planned. The
+generator refuses a recipe whose measured render would not have fitted its own declared ceiling.
+
 ## Intent Profiles
 | Intent | Speed | Energy | Warmth | Expressiveness | Notes |
 |---|---|---|---|---|---|

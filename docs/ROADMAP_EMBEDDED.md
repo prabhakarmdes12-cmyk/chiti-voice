@@ -340,9 +340,14 @@ meaningful.
   by utterance token count and so how the daemon splits sentences *is* the prosody. Its default ceiling
   is 509 tokens — one below what `encode` truncates at — which makes truncation of a long request
   structurally impossible instead of silent, and `PlanPolicy` travels with every `Plan` so a rendering
-  can be reproduced. What remains open is the manifest half: no pack yet says which policy it was tuned
-  under, and `persona.chunking` is not a field, so two builds with different defaults would still sound
-  different from the same pack. The other gap is narrowed but open: **no tokenizer slot** -- the
+  can be reproduced. The manifest half is closed too: `persona.chunking` is a field (`ChunkingConfig`,
+  declared by all three packs), `voice-pack` rejects an incoherent pair while deliberately leaving the
+  window bound to the engine that owns it, `Persona::chunking_policy` resolves the declaration against
+  the real 512-slot model, and the offline gate plans a 200-sentence input under every tracked pack's own
+  policy to prove the numbers are usable rather than merely present. What the field does NOT yet buy: the
+  mock path ignores it, so the policy is enforced on load and in planning, not on the silent audio the
+  current engines produce — which is the same honest state as every other persona field until real
+  inference lands. The other gap is narrowed but open: **no tokenizer slot** -- the
   id *numbering* is still an out-of-band file, though representability is now enforced at load.
 - **Resolved 2026-09-03.** `encode` used to filter out characters outside the 115-entry vocab, while the
   reference maps them to a `PAD` token (`vocab.get(c, pad)`). Because the style row *is* the token count,
