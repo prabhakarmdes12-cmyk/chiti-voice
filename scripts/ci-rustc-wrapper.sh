@@ -39,20 +39,18 @@ if [ -w "$log" ]; then
     touch /tmp/ci-rustc-wrapper-alive
     printf '::error::rustc-wrapper channel is alive (annotations from this job are CI log excerpts, not test failures)\n' >> "$log"
   fi
-  # Cargo asks rustc for `--error-format=json` and renders it, so the wrapper sees one JSON object per
-  # line and no line begins with "error". jq (preinstalled on GitHub's ubuntu runners) pulls the fields
-  # that identify a defect: level, file:line, text.
+  crate="$(printf '%s\n' "$@" | sed -nE 's/^--crate-name$//p;T;N;s/.*\n//p' | head -1)"
+  [ -n "$crate" ] || crate="$(printf '%s' "$*" | grep -oE '\-\-crate-name [a-z_0-9]+' | head -1 | awk '{print $2}')"
   block="$(jq -Rr 'fromjson? | select(.reason=="compiler-message") | select(.message.level=="error")
                   | "\(.message.spans[0].file_name // "?"):\(.message.spans[0].line_start // 0) \(.message.code.code // "error") \(.message.message)"' \
-             "$tmp" 2>/dev/null | head -n 12 | tr '\n' '|')"
+             "$tmp" 2>/dev/null | head -n 10 | tr '\n' '|')"
   if [ -z "$block" ]; then
-    # Non-JSON fallback (a plain `rustc` invocation, or a cargo-level error printed by the child).
-    block="$(grep -E -A2 '^error' "$tmp" | head -n 12 | tr '\n' '|' | sed -e 's/\x1b\[[0-9;]*m//g')"
+    # No compiler message at all: then whatever the child DID say is the finding (a cargo-level error,
+    # a linker failure, or a rustc that died before emitting JSON). Annotate the tail of it.
+    block="crate=${crate:-?} rc=$rc no-compiler-message :: $(tail -c 1200 "$tmp" | tr '\n' '|' | sed -e 's/\x1b\[[0-9;]*m//g')"
   fi
-  if [ -n "$block" ]; then
-    printf '::error::%s\n' "$(printf '%s' "${block:0:6000}" | sed 's/%/%25/g')" >> "$log"
+  printf '::error::%s\n' "$(printf '%s' "[$crate] ${block:0:5800}" | sed 's/%/%25/g')" >> "$log"
   fi
-fi
 
 rm -f "$tmp"
 exit "$rc"
