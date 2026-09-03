@@ -127,7 +127,10 @@ ceiling and a max-gain cap), and `tests/dsp_parity.rs`, which grades both rules 
 audio sample-for-sample with no tolerance anywhere. That also fixed a live bug: `wav.rs` scaled with
 `.round()` where the reference floors, i.e. the "already implemented and tested" item 4 below was
 **not** bit-compatible with our own evidence. What remains is the `ort` session call itself, which
-needs a machine with crates.io; CI's `--all-features` lint job compiles these modules today.*
+needs a machine with crates.io; CI compiles them under `--all-features` and *runs* them: `Unit Tests` on
+all three OSes is green at `56f13b3`, with the parity assertions among them. One test failed on the
+first push and it was my hand-written expectation, not the rule (`-1.0` floors to -32767, so the
+bottom int16 rail is unreachable from in-range audio) — which is what grading against data is for.*
 Accept `ADR-001` (Piper for T0). Then, in `PiperEngine` behind `--features piper`:
 1. `ort::Environment` + `Session` load from bytes already in the `.cvpack` (never a path
    fetch — `fetch-models` stays off; it is now removed from the workspace manifest).
