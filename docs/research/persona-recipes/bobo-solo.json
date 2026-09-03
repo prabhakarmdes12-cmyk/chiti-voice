@@ -12,6 +12,11 @@
   "espeak_voice": "en-us",
   "text": "Two minutes left, and the pie is still hot — shall I hurry?",
   "model": "kokoro-quantized.onnx (pin its sha256 and each source vector's before reproducing)",
+  "loudness": {
+    "target_dbfs": -17.5,
+    "peak_ceiling": 0.98,
+    "max_gain_db": 12.0
+  },
   "provenance_status": "incomplete by design — VOICE_INV_008 must keep refusing this as a 'real' pack",
   "measured": {
     "f0_median_hz": 206.9,

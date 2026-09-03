@@ -29,31 +29,81 @@
     "id": "tara",
     "display_name": "Tara",
     "description": "Warm, professional Indian English female-presenting voice",
+    "language": "en-IN",
     "default_rate": 1.0,
-    "default_pitch": 1.0,
+    "default_pitch": 0.0,
+    "pitch_baked_into_style": false,
+    "style": {
+      "blend": [
+        {
+          "voice": "af_bella",
+          "weight": 0.4
+        },
+        {
+          "voice": "af_heart",
+          "weight": 0.35
+        },
+        {
+          "voice": "af_aoede",
+          "weight": 0.25
+        }
+      ]
+    },
+    "loudness": {
+      "target_dbfs": -21.0,
+      "peak_ceiling": 0.98,
+      "max_gain_db": 12.0
+    },
+    "pronunciation_overrides": {
+      "chiti": "ˈtʃɪti"
+    },
     "intent_profiles": {
-      "warm": {
-        "rate": 0.95,
-        "pitch": 1.0,
-        "energy": 1.1,
+      "GREETING": {
+        "rate": 1.05,
+        "pitch": 0.0,
+        "energy": 0.65,
         "pause_factor": 1.0
       },
-      "calm": {
-        "rate": 0.9,
-        "pitch": 0.95,
-        "energy": 0.9,
-        "pause_factor": 1.1
+      "QUESTION": {
+        "rate": 1.0,
+        "pitch": 0.0,
+        "energy": 0.55,
+        "pause_factor": 1.0
       },
-      "alert": {
-        "rate": 1.1,
-        "pitch": 1.05,
-        "energy": 1.2,
-        "pause_factor": 0.9
-      },
-      "greeting": {
+      "CONFIRMATION": {
         "rate": 0.95,
-        "pitch": 1.05,
-        "energy": 1.15,
+        "pitch": 0.0,
+        "energy": 0.5,
+        "pause_factor": 1.0
+      },
+      "WARNING": {
+        "rate": 0.9,
+        "pitch": 0.0,
+        "energy": 0.45,
+        "pause_factor": 1.0
+      },
+      "ERROR": {
+        "rate": 0.88,
+        "pitch": 0.0,
+        "energy": 0.4,
+        "pause_factor": 1.0
+      },
+      "CELEBRATION": {
+        "rate": 1.1,
+        "pitch": 0.0,
+        "energy": 0.75,
+        "pause_factor": 1.0
+      },
+      "GOODBYE": {
+        "rate": 0.95,
+        "pitch": 0.0,
+        "energy": 0.55,
+        "pause_factor": 1.0
+      },
+      "ANNOUNCEMENT": {
+        "rate": 1.0,
+        "pitch": 0.0,
+        "energy": 0.6,
         "pause_factor": 1.0
       }
     }

@@ -61,10 +61,19 @@ pub struct SynthesisRequest {
     /// Desired output format
     #[serde(default)]
     pub format: Option<SynthesisFormat>,
-    /// Synthesis speed/rate multiplier (0.5 = half speed, 2.0 = double speed)
+    /// Speed multiplier, the one prosody input the engine family actually has. 0.5 = half speed,
+    /// 2.0 = double; 0.5..=1.6 is the band measured as intelligible, and it is the band
+    /// `voice-pack` allows a persona to declare.
     #[serde(default)]
     pub rate: Option<f32>,
-    /// Pitch multiplier (1.0 = normal, 2.0 = higher pitch)
+    /// Pitch **offset**, with the same units and neutral value (0.0) as
+    /// `voice_pack::PersonaConfig::default_pitch` — not a multiplier. This pair used to disagree
+    /// about what "pitch" meant while neither could be applied, which is the bug the schema now
+    /// refuses: `PersonaConfig::default_pitch == 1.0` (a multiplier reading) is a load-time error.
+    ///
+    /// A backend has exactly two honest options for a non-zero value: realise it by selecting a
+    /// different style vector (register is baked into the cast, see `pitch_baked_into_style`), or
+    /// return an error. Silently ignoring it is what made the old packs lie.
     #[serde(default)]
     pub pitch: Option<f32>,
     /// Intent/style label (e.g., "warm", "calm", "alert")

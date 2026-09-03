@@ -53,6 +53,12 @@ def sha256_of(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+# A Kokoro-class style matrix: 510 rows x 256 float32. The row *is* the voice, so its size is not a
+# formality — `crates/voice-pack/src/manifest.rs` refuses any other length for a declared
+# `style_vector`, because a truncated matrix still loads and speaks as a different person.
+STYLE_VECTOR_BYTES = 522240
+
+
 def file_type_for(name: str) -> str:
     lower = name.lower()
     if lower.endswith(".onnx"):
@@ -61,6 +67,12 @@ def file_type_for(name: str) -> str:
         return "vocoder"
     if lower.endswith((".phon", "phonemes.json")):
         return "phonemes"
+    # Checked before the .json rule: HuggingFace's serialised vocabulary is `tokenizer.json`, and
+    # labelling it "config" would let a pack ship one the loader never reads.
+    if Path(lower).name == "tokenizer.json":
+        return "tokenizer"
+    if lower.endswith(".bin"):
+        return "style_vector"
     if lower.endswith(".json"):
         return "config"
     return "metadata"
@@ -129,6 +141,12 @@ def build_pack(pack_dir: Path, out_path: Path, require_real: bool) -> bool:
         data = payload[rel]
         if len(data) > MAX_FILE_BYTES:
             print(f"  ERROR: {rel} is {len(data)} bytes, over the loader limit")
+            return False
+        ftype = entry.get("file_type") or file_type_for(rel)
+        if ftype == "style_vector" and len(data) != STYLE_VECTOR_BYTES:
+            print(f"  ERROR: {rel} is {len(data)} bytes; a style vector must be exactly "
+                  f"{STYLE_VECTOR_BYTES} (510 x 256 float32). The loader would reject this pack, "
+                  f"and one row short it would still load as the wrong voice.")
             return False
         files.append(
             {

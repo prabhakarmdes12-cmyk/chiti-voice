@@ -172,7 +172,11 @@ engine path.
   non-placeholder pack with incomplete provenance, and CI checks it).
 
 **Step 5 — persona runtime wiring, then quality research.**
-Intent → prosody (`rate/pitch/energy/pause_factor`) applied by the engine, not just parsed.
+Intent → prosody applied by the engine, not just parsed — and the manifest now says only what can be
+applied: `rate` goes to the graph's `speed` input, `energy` becomes a dBFS offset on the loudness
+stage, `pause_factor` becomes inserted silence, and `pitch` is realised by **cast selection** (a pack
+must set `pitch_baked_into_style` or the value is rejected at load). `warmth`/`expressiveness` stay out
+of the manifest entirely; they are documented, not dialled (§6).
 Then, and only then, the `20MB_CHALLENGE` research track (quantization/distillation, shared
 backbone + adapters), and the browser-native WASM/WebGPU question — which is a *separate
 engineering problem* (§4), not a later phase of this one.
@@ -307,8 +311,13 @@ meaningful.
 - Four of the five parameters in `docs/personas/*.md` (Pitch, Energy, Warmth, Expressiveness) are
   **not engine inputs** — verified against the ONNX graph, which accepts `input_ids`, `style`, `speed`
   and nothing else. They are now documented as casting/post-processing targets rather than dials
-  (`PERSONA_STYLE_VECTORS.md` §1). Product decision still open: redefine them at pack level, or delete
-  them from the specs.
+  (`PERSONA_STYLE_VECTORS.md` §1), and the manifest half of that decision is *closed*: `.cvpack`
+  `persona` blocks state only what can be honoured, and `PackValidator` rejects the rest at load
+  (rate band 0.5–1.6, energy as 0–1 mapped to a dBFS offset, `default_pitch` only with
+  `pitch_baked_into_style`, no per-intent pitch). Still open, and a product call rather than an
+  engineering one: whether `warmth` and `expressiveness` stay in the specs at all, given that they
+  have no implementation and no proposed one — they are recorded in the persona docs and the recipe
+  JSONs in the meantime.
 - `zip = "0.6"` — two majors behind (0.6 → 2.x renamed the write/read APIs). Not upgraded
   blind because nothing here can compile-check it; do it in a PR with `cargo test` running.
 - `security.rs` returns `Result<(), String>`; `error.rs` therefore maps pack failures to
@@ -320,10 +329,17 @@ meaningful.
 - No audio-device playback in the CLI (`rodio` etc. not added: dependency bar in `AGENTS.md`).
 - `Cargo.lock` is still absent — it must be generated on a machine with crates.io access and
   committed. CI's `supply-chain` job now fails if it is missing.
-- `.cvpack` cannot express what the measured engines need: a 115-symbol tokenizer table, a
-  510 × 256 style matrix, a chunking policy (style row is picked *by utterance length*), and a
-  `pronunciation_overrides` map for proper nouns. Spec amendment first, then the Rust types —
-  not the other way round.
+- `.cvpack` can now express three of the four things the measured engines need: where the
+  510 × 256 style matrix comes from (`persona.style`: one stock voice, a bounded blend, or a packed
+  file of exactly 522,240 bytes), a bounded output-loudness stage (`persona.loudness`), and a
+  `pronunciation_overrides` map for proper nouns (`chiti` → `ˈtʃɪti`, which is what the permissive
+  graph otherwise mangles). Packs are generated from the spec docs by
+  `scripts/sync-persona-manifests.py` (`--check` is wired into `ops/ci/`; the live Phase 1 workflow's
+  job list is fixed). Two gaps remain: **no tokenizer slot** (the 115-symbol table is still an
+  out-of-band file), and **no chunking policy**, which is the more dangerous one — the engine picks the
+  style row by utterance token count, so how the daemon splits sentences changes the prosody of a
+  pack, and nothing in the manifest says what the pack was tuned for. Both belong in the inference
+  commit, not in a schema tweak after it.
 - No output-level normalisation anywhere, and the spike says it is needed: peak ranged
   0.50–0.99 across voices on the same sentence. One hot voice plus a device volume at max is
   clipping.

@@ -376,3 +376,20 @@ jobs:
           test -f LICENSE || { echo "MISSING: LICENSE (README references it)"; missing=1; }
           test -f .gitignore || { echo "MISSING: .gitignore"; missing=1; }
           exit $missing
+
+      # Packs are data, and data rots silently. `voice-packs/*/manifest.json` claims numbers that
+      # live in docs/personas/*.md and docs/research/persona-recipes/*.json; and `voice-packs/dist/`
+      # is a checked-in artifact rebuilt from them. Either can fall behind without touching Rust —
+      # which is how a schema change once passed every unit test while shipping stale packs. So CI
+      # regenerates both and fails on any diff.
+      - name: Shipped packs must match their sources
+        run: |
+          set -euo pipefail
+          python3 scripts/sync-persona-manifests.py --check
+          python3 scripts/build-voice-packs.py build
+          python3 scripts/build-voice-packs.py verify
+          git diff --exit-code voice-packs/ || {
+            echo "::error voice-packs/ is stale: commit the regenerated manifests and dist packs,"
+            echo "   or run 'python3 scripts/sync-persona-manifests.py && python3 scripts/build-voice-packs.py build'."
+            exit 1
+          }

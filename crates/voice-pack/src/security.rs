@@ -172,6 +172,14 @@ impl PackValidator {
             }
         }
 
+        // Persona claims are the manifest's own rules (`PackManifest::validate_persona`) so the CLI
+        // and `chiti-voice verify` can run them without a validator; they belong in this gate too,
+        // because "the pack promises prosody the engine cannot honour" is a load-time failure, not a
+        // cosmetic one — the alternative is a persona that silently synthesises as somebody else.
+        manifest
+            .validate_persona()
+            .map_err(|e| format!("persona: {e}"))?;
+
         if self.require_provenance {
             self.validate_provenance(manifest)?;
         }

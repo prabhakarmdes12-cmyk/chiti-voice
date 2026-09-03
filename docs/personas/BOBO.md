@@ -25,10 +25,13 @@ Bobo is bright, curious, and enthusiastic. Bobo loves short, punchy sentences. B
 [`docs/research/PERSONA_STYLE_VECTORS.md`](../research/PERSONA_STYLE_VECTORS.md)). **Only Speed is an
 engine input**, and Expressiveness 0.88 is the hardest row for it: blending style vectors measurably
 *attenuates* pitch movement, so a three-way mix for Bobo came out calmer than all three of its
-sources (164.5 Hz range vs 254.1 / 212.5 / 181.1). The honest cast is therefore a single wide-range
-voice, `assets/offline-spike/persona-bobo-solo.wav` — `am_santa` at speed 1.15, +5.1 dB of loudness
-to reach −17.5 dBFS, measuring 206.9 Hz median F0 and 254.1 Hz range. `persona-bobo.wav` is kept as
-the control that proves the point. Warmth again has no implementation.
+sources (164.5 Hz range pre-gain, 254.1 / 212.5 / 181.1 for the sources; the shipped blend clip reads
+166.5 Hz). The honest cast is therefore a single wide-range voice,
+`assets/offline-spike/persona-bobo-solo.wav` — `am_santa` at speed 1.15, +5.1 dB of loudness
+to reach −17.5 dBFS, measuring 206.9 Hz median F0 and 254.1 Hz range. `persona-bobo.wav` is that same
+sentence from the blend: keep it as the counter-evidence, not as a cast. It is also why this pack ships
+`am_santa` alone while `persona-recipes/bobo.json` documents the mix. Warmth again has no
+implementation.
 
 ## Intent Profiles
 | Intent | Speed | Energy | Warmth | Expressiveness | Notes |

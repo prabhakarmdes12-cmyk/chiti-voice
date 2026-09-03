@@ -62,12 +62,16 @@ enum Commands {
         #[arg(long, default_value = "mock")]
         engine: String,
 
-        /// Speech rate multiplier (0.5-2.0)
+        /// Speech rate multiplier (0.5-1.6). The graph accepts up to 2.0; the band here is the one
+        /// measured as intelligible, and it is what a voice pack is allowed to declare.
         #[arg(long, default_value = "1.0")]
         rate: f32,
 
-        /// Pitch multiplier (0.5-2.0)
-        #[arg(long, default_value = "1.0")]
+        /// Pitch OFFSET, where 0.0 is as-recorded — the same convention as the pack's
+        /// persona.default_pitch. There is no pitch input in a Kokoro-class graph, so a non-zero
+        /// value is only honoured by a backend that picks a different cast; this build reports that
+        /// instead of pretending to apply it.
+        #[arg(long, default_value = "0.0")]
         pitch: f32,
 
         /// Intent/style label defined by the voice pack (e.g. warm, calm, alert)
@@ -275,8 +279,11 @@ async fn cmd_speak(
     intent: Option<String>,
     allow_silence: bool,
 ) -> Result<()> {
-    if !(0.5..=2.0).contains(&rate) || !(0.5..=2.0).contains(&pitch) {
-        bail!("--rate and --pitch must be within 0.5..=2.0");
+    if !(0.5..=1.6).contains(&rate) {
+        bail!("--rate must be within 0.5..=1.6: the band measured on this engine family, and the band voice-pack validates");
+    }
+    if !(-1.0..=1.0).contains(&pitch) {
+        bail!("--pitch is an offset around 0.0 (neutral), not a multiplier: expected -1.0..=1.0, got {pitch:.2}");
     }
 
     let format = SynthesisFormat::from_str(format)
@@ -458,8 +465,11 @@ fn report_prosody(pack: &VoicePack, intent: Option<&str>, rate: f32, pitch: f32)
     };
 
     println!(
-        "persona {} (default rate {:.2}, pitch {:.2})",
-        persona.display_name, persona.default_rate, persona.default_pitch
+        "persona {} (default rate {:.2}, pitch offset {:.2}, honoured via cast: {})",
+        persona.display_name,
+        persona.default_rate,
+        persona.default_pitch,
+        persona.pitch_baked_into_style
     );
 
     // Look the intent up with the inner &str; `intent` itself is an Option, and
@@ -467,8 +477,8 @@ fn report_prosody(pack: &VoicePack, intent: Option<&str>, rate: f32, pitch: f32)
     let profile = intent.and_then(|name| persona.intent_profiles.get(name));
     match (intent, profile) {
         (Some(name), Some(profile)) => println!(
-            "intent {name:?}: rate {:.2}, pitch {:.2}, energy {:.2}, pause_factor {:.2}",
-            profile.rate, profile.pitch, profile.energy, profile.pause_factor
+            "intent {name:?}: rate {:.2}, energy {:.2}, pause_factor {:.2} (no per-intent pitch: none is implementable)",
+            profile.rate, profile.energy, profile.pause_factor
         ),
         (Some(name), None) => {
             let mut known: Vec<&str> = persona.intent_profiles.keys().map(|k| k.as_str()).collect();
@@ -484,7 +494,8 @@ fn report_prosody(pack: &VoicePack, intent: Option<&str>, rate: f32, pitch: f32)
     if !vocal_core::REAL_SYNTHESIS_AVAILABLE {
         println!(
             "(prosody is parsed and validated but NOT applied: the mock engine ignores \
-             rate={rate:.2} pitch={pitch:.2}; a real backend must consume them)"
+             rate={rate:.2} pitch={pitch:.2}; a real backend must consume them. Pitch has no graph \
+             input at all, so for it \"consumed\" means choosing a cast whose register already has it.)"
         );
     }
 }

@@ -191,7 +191,12 @@ def main() -> int:
             "blend_rule": "elementwise weighted sum over the full 510x256 f32 matrix (every row)",
             "speed": args.speed, "espeak_voice": args.lang, "text": args.text,
             "model": "kokoro-quantized.onnx (pin its sha256 and each source vector's before reproducing)",
-            "provenance_status": "incomplete by design — VOICE_INV_008 must keep refusing this as a 'real' pack",
+            "loudness": None if args.target_dbfs is None else {
+            "target_dbfs": args.target_dbfs,
+            "peak_ceiling": args.peak_ceiling,
+            "max_gain_db": args.max_gain_db,
+        },
+        "provenance_status": "incomplete by design — VOICE_INV_008 must keep refusing this as a 'real' pack",
             "measured": {k: got.get(k) for k in ("f0_median_hz", "f0_range_hz", "phonemes_per_s", "level_dbfs", "peak", "duration_s")},
             "sources_measured": [{k: r.get(k) for k in ("voice", "weight", "f0_median_hz", "f0_range_hz", "phonemes_per_s", "level_dbfs")} for r in per_source],
         }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

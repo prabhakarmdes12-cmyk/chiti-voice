@@ -173,7 +173,8 @@ Blending behaves well on register and badly on prosody, and those are two differ
   non-zero and not sign-stable, which is why `--report` states that a recipe predicts **direction,
   never a value**. Measure the result before believing the weights.
 - **Prosodic range is attenuated.** Bobo's three sources have pitch ranges of 254.1 / 212.5 /
-  181.1 Hz; the blend measured **164.5 Hz — lower than all three**. Averaging style vectors averages
+  181.1 Hz; the blend measured **164.5 Hz — lower than all three** (166.5 Hz in the shipped clip; see
+  the measurement note below — the comparison in this section is always pre-gain against pre-gain). Averaging style vectors averages
   the contours too, so a mix always lands calmer than its most animated source.
 - **Control, so this isn't a guess:** the same source alone (`bobo-solo`, `am_santa` at weight 1.0)
   measured **254.1 Hz — identical to the source row**, which proves the pipeline does not degrade
@@ -184,6 +185,14 @@ blended — that is what makes them smooth. An expressive persona must *pick* th
 and leave it alone, using `speed` and loudness for the rest. Any "expressiveness" dial in a pack must
 therefore be a **selection + gain** parameter, never a blend weight; `persona-recipes/` now encodes
 that difference by shipping `bobo` (blended) next to `bobo-solo` (control).
+
+**Measurement note, because two numbers for one clip is how a doc rots.** `f0_range_hz` is p95 − p5 of
+an autocorrelation F0 track, and it moves ~1 % depending on *when* it is taken: `derive-persona-style.py`
+prints the source and blend rows from the raw model output, then measures the written WAV again after
+loudness normalisation and writes that second figure into the recipe's `measured` block and the table
+above. Same audio, same algorithm, different gain stage. So §4's comparisons are pre-gain throughout
+(164.5 vs 254.1 / 212.5 / 181.1), and the §3 table is the shipped clip (166.5). Neither number is the
+finding — the finding is that a blend lands below every one of its sources either way.
 
 ## 5. What this does not prove
 
