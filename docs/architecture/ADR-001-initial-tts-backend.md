@@ -2,7 +2,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | PROPOSED |
+| **Status** | PROPOSED — accepted in part for the T0 tier; see `docs/ROADMAP_EMBEDDED.md` §2 Step 1 and ADR-002 requirement |
 | **Date** | September 2026 |
 | **Deciders** | Chiti Platform Team |
 | **Supersedes** | — |
@@ -18,9 +18,12 @@ Chiti Vocal Runtime Phase 1 was built with a `MockEngine` — a silence-emitting
 - The `VoiceEngine` interface (abstract, swappable)
 - The Persona Runtime (persona config → synthesis params)
 - The State Machine (UNINITIALIZED → READY → SYNTHESIZING → PLAYING → READY)
-- The `.cvpack` format and manifest verification
-- The TypeScript Web SDK (both Local Service and Browser-Native modes)
-- The full CI pipeline including invariant tests
+- The `.cvpack` format and manifest verification (**verification was added 2026-09-03; the
+  three shipped packs previously failed their own checksums**)
+- Error codes in `vocal-core` (**pack-security codes were unreachable until the
+  `From<LoadError> for VoiceError` mapping**)
+- A CI skeleton (**with gates that could not fail; now replaced**)
+- **Not** a TypeScript SDK, **not** a local daemon, **not** any audible output
 
 **Phase 2 requires real speech.** The team must select a concrete TTS backend to integrate behind the `VoiceEngine` interface and produce an offline demo with:
 - A working Tara voice (Indian English)
@@ -46,7 +49,7 @@ The following requirements were used to evaluate candidates. Weight reflects imp
 | ONNX format available | HIGH | ONNX Runtime is the chosen inference backend; non-ONNX models require a separate runtime dependency |
 | Browser WASM compatibility | MEDIUM | Phase 11 deliverable; not required for Phase 2 but must not be architecturally blocked |
 | Streaming support | HIGH | First-chunk latency requirement; full synthesis before playback is not acceptable for long texts |
-| License permissiveness | HIGH | Must allow commercial use and redistribution in `.cvpack` bundles |
+| License permissiveness | HIGH | Must allow commercial use and redistribution in `.cvpack` bundles. **Evaluate the whole path, not the engine repo's license:** Piper's engine is MIT but its voices are licensed per model card, and Piper's phonemization backend espeak-ng is GPL-3.0, which is a distribution-obligation question for a proprietary binary. See `docs/ROADMAP_EMBEDDED.md` §3 and `LICENSE`. **This requirement was scored in the earlier draft without checking the G2P dependency, and that gap is why ADR-002 must record an explicit decision.** |
 | Actively maintained | MEDIUM | Security updates and bug fixes; unmaintained projects are a long-term risk |
 | Quantization support | MEDIUM | Required for VOCAL NANO tier (< 30 MB target); INT8 quantization must be possible |
 
@@ -213,7 +216,7 @@ The Persona Runtime selects the engine based on the hardware tier and persona co
 
 ### Immediate Actions (Phase 2)
 
-1. **Implement `PiperEngineAdapter`** in `crates/chiti-vocal-core/src/engine/piper.rs`.
+1. **Implement `PiperEngineAdapter`** in `crates/vocal-core/src/engine/piper.rs`. This text predates the crate rename, and the file that exists today is a skeleton: `REAL_SYNTHESIS_AVAILABLE` is still `false`, so nothing in `crates/` produces audio from the graph yet.
    - Load Piper ONNX model via `ort` (ONNX Runtime Rust bindings).
    - Implement `initialize()`, `loadVoice()`, `synthesize()`, `stream()`, `cancel()`, `health()`, `capabilities()`, `dispose()`.
    - Stream by sentence boundary (Piper's natural unit).

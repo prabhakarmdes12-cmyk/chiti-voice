@@ -1,4 +1,16 @@
-# Chiti Voice Web SDK — TypeScript API Reference
+# Chiti Voice Web SDK â€” TypeScript API Reference
+
+> **STATUS: SPECIFICATION ONLY â€” NOT IMPLEMENTED (2026-09-03).** No daemon and no SDK
+> exist in this repository: there is no HTTP server, no listener, no `@chiti/voice-web`
+> package, and no TypeScript anywhere. Every symbol below is a design proposal. Earlier
+> documents (`ADR-001`) asserted the SDK had been "established" in Phase 1 â€” that was false.
+> See `README.md` for what actually runs, and `docs/ROADMAP_EMBEDDED.md` Â§2 Step 3.
+
+> **Unresolved spec conflict:** this document uses port **8765**, while `README.md`,
+> `PRD.md` and `AGENTS.md` use **7731**. Resolve before implementation â€” and note the port
+> is security-relevant, since loopback binding plus origin checks are the daemon's only
+> defence.
+
 Package: `@chiti/voice-web`
 Version: 0.1.0
 
@@ -50,11 +62,11 @@ interface SpeakOptions {
   intent?: VoiceIntent;
   style?: string;
   controls?: {
-    speed?: number;       // 0.5–2.0
+    speed?: number;       // 0.5â€“2.0
     pitch?: number;       // -1.0 to 1.0
-    energy?: number;      // 0.0–1.0
-    warmth?: number;      // 0.0–1.0
-    expressiveness?: number; // 0.0–1.0
+    energy?: number;      // 0.0â€“1.0
+    warmth?: number;      // 0.0â€“1.0
+    expressiveness?: number; // 0.0â€“1.0
   };
   interruptible?: boolean;
   requestId?: string;

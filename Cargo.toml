@@ -3,6 +3,7 @@ members = [
     "crates/vocal-core",
     "crates/voice-pack",
     "apps/chiti-voice-cli",
+    "apps/sample-reader",
 ]
 resolver = "2"
 
@@ -12,6 +13,12 @@ edition = "2021"
 authors = ["Chiti Technologies"]
 license = "Proprietary"
 repository = "https://github.com/chiti-technologies/vocal-runtime"
+# 1.88 is not arbitrary: `ort 2.0.0-rc.13` declares `rust_version = "1.88"`, and it is an
+# exact (prerelease) pin. Because Cargo's MSRV-aware resolver must satisfy
+# `rust-version`, declaring anything lower makes *resolution itself* fail — which surfaces
+# as every CI job dying in ~30s with exit 101 and no compiler output at all. If you bump
+# ort, re-check its MSRV here.
+rust-version = "1.88"
 
 [workspace.dependencies]
 tokio = { version = "1.40", features = ["full"] }
@@ -26,18 +33,40 @@ sha2 = "0.10"
 hex = "0.4"
 async-trait = "0.1"
 
-# ONNX Runtime for Piper inference
-ort = { version = "2.0.0-rc.13", features = ["fetch-models"] }
+# ONNX Runtime for Piper inference.
+# `fetch-models` is DELIBERATELY NOT ENABLED: it lets the runtime download model
+# weights from a URL at run time, which directly violates VOICE_INV_001 (Offline
+# Independence). Models must arrive only via a validated `.cvpack`.
+# Enabled only behind vocal-core's `piper` feature so base builds stay network-free.
+ort = "2.0.0-rc.13"
 ndarray = { version = "0.15", features = ["serde"] }
 
-# CLI tools
-clap = { version = "4.5", features = ["derive"] }
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
 
-# Testing
-mockito = "1.2"
+# `mockito` (HTTP mocking) was removed from this list: it was declared and used by
+# nothing, and an HTTP test double in a crate whose core invariant is "no network
+# client" invites the wrong dependency later.
+
+# NOTE: every `foo.workspace = true` in a member manifest MUST have a matching entry
+# here. A missing entry is not a warning — it fails every cargo command in the
+# workspace (including `cargo metadata`), on every platform, in ~5 seconds. This
+# regression happened for real: `anyhow` was dropped from this table while
+# apps/chiti-voice-cli and crates/voice-pack still referenced it.
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# Embedded/dev-profile tuning for target devices.
+# `s` profiles matter because the stated product goal is small, deployable voice
+# packs and runtime binaries. These are starting points, not measured results.
+[profile.release-embedded]
+inherits = "release"
+opt-level = "z"
+lto = "fat"
+panic = "abort"
+strip = true
+codegen-units = 1

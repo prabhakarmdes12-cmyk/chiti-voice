@@ -5,7 +5,7 @@
 
 use crate::engine::VoiceCapabilities;
 use crate::error::{VoiceErrorCode, VoiceResult};
-use crate::synthesis::{AudioMetadata, SynthesisFormat, SynthesisRequest, SynthesisResponse};
+use crate::synthesis::{SynthesisRequest, SynthesisResponse};
 use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -51,13 +51,9 @@ impl PiperEngine {
         // Create capability info
         let cap = VoiceCapabilities {
             voice_id: voice_id.clone(),
-            display_name: format!("Piper {}", voice_id),
+            display_name: format!("Piper {voice_id}"),
             supported_languages: vec![language],
-            supported_formats: vec![
-                "pcm_f32".to_string(),
-                "wav".to_string(),
-                "ogg".to_string(),
-            ],
+            supported_formats: vec!["pcm_f32".to_string(), "wav".to_string(), "ogg".to_string()],
             supports_streaming: true,
             min_text_length: 1,
             max_text_length: 5000,
@@ -65,10 +61,13 @@ impl PiperEngine {
             engine_version: "1.0.0".to_string(),
         };
 
-        self.voices.insert(voice_id, config);
+        // `voice_id` is used again by the log line below, so it must not be moved into
+        // the map. (E0382 — pre-existing in this file, previously masked because the
+        // workspace never compiled.)
+        self.voices.insert(voice_id.clone(), config);
         self.capabilities.push(cap);
 
-        debug!("Registered Piper voice: {}", voice_id);
+        debug!("Registered Piper voice: {voice_id}");
     }
 
     /// Get configuration for a specific voice
@@ -93,13 +92,17 @@ impl crate::engine::VoiceEngine for PiperEngine {
     }
 
     async fn health(&self) -> VoiceResult<crate::engine::EngineHealth> {
-        // TODO: Check ONNX Runtime availability
+        // Deliberately never reports Healthy: there is no ONNX inference path in
+        // this engine yet, so a "Healthy" status would be a lie that applications
+        // would build against.
         if self.voices.is_empty() {
-            Ok(crate::engine::EngineHealth::Degraded(
+            Ok(crate::engine::EngineHealth::Unhealthy(
                 "No voices registered".to_string(),
             ))
         } else {
-            Ok(crate::engine::EngineHealth::Healthy)
+            Ok(crate::engine::EngineHealth::Unhealthy(
+                "Piper backend not implemented: voices are registered but no audio can be synthesized (ONNX inference pending)".to_string(),
+            ))
         }
     }
 
@@ -113,41 +116,37 @@ impl crate::engine::VoiceEngine for PiperEngine {
             .find(|v| v.voice_id == voice_id)
             .cloned()
             .ok_or_else(|| {
-                error!("Voice not found: {}", voice_id);
+                error!("Voice not found: {voice_id}");
                 crate::error::VoiceError::new(
                     VoiceErrorCode::VoiceNotFound,
-                    format!("Voice not found: {}", voice_id),
+                    format!("Voice not found: {voice_id}"),
                 )
             })
     }
 
-    async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse> {
-        // Validate voice
-        let _config = self
-            .get_voice_config(&request.voice)
-            .ok_or_else(|| {
-                crate::error::VoiceError::new(
-                    VoiceErrorCode::VoiceNotFound,
-                    format!("Voice not found: {}", request.voice),
-                )
-            })?;
-
-        // TODO: Run ONNX model inference
-        // For now, return error to indicate not yet implemented
+    async fn synthesize(&self, _request: &SynthesisRequest) -> VoiceResult<SynthesisResponse> {
+        // Capability is reported before request validation, deliberately. Refusing with
+        // VoiceNotFound for an unknown id would tell the caller to fix the request and
+        // retry, when in fact no request can succeed in this build. (Same reasoning as
+        // an HTTP API returning 503 rather than 404 for a bad parameter on a dead model.)
+        // The trait documents this ordering contract for all engines.
+        //
+        // NOT IMPLEMENTED. No code in this crate references `ort`, so there is nothing
+        // to validate against yet; this engine can list voices but cannot produce audio,
+        // and says so loudly rather than returning silence that looks like success.
+        // When inference lands (docs/ROADMAP_EMBEDDED.md Step 1), validate
+        // `request.voice` against `self.get_voice_config` *after* this refusal and
+        // return VoiceErrorCode::VoiceNotFound for ids that are not registered.
         Err(crate::error::VoiceError::new(
-            VoiceErrorCode::SynthesisFailed,
-            "Piper synthesis not yet implemented (ONNX integration pending)",
+            VoiceErrorCode::EngineNotAvailable,
+            "Piper synthesis is not implemented: no ONNX inference path exists yet (see docs/ROADMAP_EMBEDDED.md, Step 1)",
         ))
     }
 
-    async fn stream(
-        &self,
-        _request: &SynthesisRequest,
-    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>> {
-        // TODO: Implement streaming synthesis
+    async fn stream(&self, _request: &SynthesisRequest) -> VoiceResult<crate::engine::AudioStream> {
         Err(crate::error::VoiceError::new(
-            VoiceErrorCode::SynthesisFailed,
-            "Piper streaming not yet implemented",
+            VoiceErrorCode::EngineNotAvailable,
+            "Piper streaming is not implemented: no ONNX inference path exists yet",
         ))
     }
 
@@ -169,6 +168,10 @@ impl crate::engine::VoiceEngine for PiperEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The trait is implemented via a fully-qualified path above
+    // (`impl crate::engine::VoiceEngine for ...`), so its methods are not in
+    // scope here unless the trait itself is imported.
+    use crate::engine::VoiceEngine;
 
     #[test]
     fn test_piper_engine_creation() {
@@ -196,10 +199,7 @@ mod tests {
     async fn test_piper_health() {
         let engine = PiperEngine::new();
         let health = engine.health().await.unwrap();
-        assert!(matches!(
-            health,
-            crate::engine::EngineHealth::Degraded(_)
-        ));
+        assert!(matches!(health, crate::engine::EngineHealth::Unhealthy(_)));
     }
 
     #[tokio::test]

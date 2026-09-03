@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Chiti Technologies",
   "license": "Proprietary",
-  "description": "Playful, expressive voice for children's products, educational toys, and companion robots.",
+  "description": "Playful, expressive voice for children's products, educational toys, and companion robots. [PLACEHOLDER PACK — no model, cannot synthesize speech]",
   "engine_family": "piper",
   "engine_version_min": "1.0.0",
   "supported_languages": [
@@ -30,41 +30,60 @@
     "id": "bobo",
     "display_name": "Bobo",
     "description": "Playful, expressive fictional non-child character for high-energy, engaging content",
-    "default_rate": 1.05,
-    "default_pitch": 1.1,
+    "default_rate": 1.15,
+    "default_pitch": 0.3,
+    "pitch_baked_into_style": true,
+    "style": {
+      "source_voice": "am_santa"
+    },
+    "loudness": {
+      "target_dbfs": -17.5,
+      "peak_ceiling": 0.98,
+      "max_gain_db": 12.0
+    },
+    "pronunciation_overrides": {
+      "chiti": "ˈtʃɪti"
+    },
+    "chunking": {
+      "max_units": 509,
+      "min_chunk_units": 8
+    },
     "intent_profiles": {
-      "excited": {
-        "rate": 1.15,
-        "pitch": 1.15,
-        "energy": 1.3,
-        "pause_factor": 0.8
+      "GREETING": {
+        "rate": 1.2,
+        "pitch": 0.0,
+        "energy": 0.85,
+        "pause_factor": 1.0
       },
-      "calm": {
-        "rate": 0.95,
-        "pitch": 1.0,
+      "CELEBRATION": {
+        "rate": 1.25,
+        "pitch": 0.0,
         "energy": 0.9,
-        "pause_factor": 1.1
+        "pause_factor": 1.0
       },
-      "encouraging": {
-        "rate": 1.05,
-        "pitch": 1.1,
-        "energy": 1.2,
-        "pause_factor": 0.9
-      },
-      "playful": {
+      "QUESTION": {
         "rate": 1.1,
-        "pitch": 1.15,
-        "energy": 1.25,
-        "pause_factor": 0.85
+        "pitch": 0.0,
+        "energy": 0.78,
+        "pause_factor": 1.0
+      },
+      "WARNING": {
+        "rate": 0.98,
+        "pitch": 0.0,
+        "energy": 0.65,
+        "pause_factor": 1.0
       }
     }
   },
   "provenance": {
-    "training_data_statement": "Trained on Piper multi-language dataset with high-expressiveness tuning",
-    "model_license": "Apache 2.0",
-    "consent_obtained": true,
-    "dataset_attribution": "Piper TTS Project (Mozilla/Rhasspy)",
-    "build_timestamp": "2026-09-02T00:00:00Z",
-    "signature_status": "UNSIGNED"
-  }
+    "training_data_statement": null,
+    "model_license": null,
+    "consent_obtained": null,
+    "dataset_attribution": null,
+    "build_timestamp": "2026-09-03T00:00:00Z",
+    "signature": null,
+    "signature_status": "UNSIGNED",
+    "notes": "NO MODEL IS PRESENT IN THIS PACK. model.onnx is a placeholder written by scripts/build-voice-packs.py, so the fields above are unknown rather than false. The previous revision of this file asserted consent_obtained=true and model_license='Apache 2.0' for a file that did not exist. When a real model is added, fill these fields from that model's actual model card: Piper's engine is MIT but voice models are licensed PER VOICE (CC0/CC-BY/CC-BY-SA and some non-commercial), and Piper's phonemization backend espeak-ng is GPL-3.0. Do not copy a license string; verify it."
+  },
+  "status": "placeholder"
 }

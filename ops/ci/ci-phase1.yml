@@ -1,0 +1,408 @@
+name: CI
+
+# NOT ACTIVE YET — this file lives in ops/ci/ because creating or updating anything under
+# .github/workflows/ needs the `workflows` permission, which the tooling that prepared
+# this change does not have (the push is rejected outright). Adopt with:
+#
+#     scripts/install-ci.sh
+#
+# Phase 1 gates in the currently-live workflow were theatre: a "Verify test output" step
+# that only ran `echo`, a dependency audit ending in `|| echo "Audit check (info only)"`,
+# an "offline synthesis" job with no network isolation, and `test -f
+# voice-packs/dist/tara.cvpack` reported as "three voices load successfully" while all
+# three packs failed their own checksums. The build itself has been RED on main since this
+# workflow landed: `crates/vocal-core/Cargo.toml` declared `examples/simple_speak.rs`,
+# which did not exist, so the workspace manifest would not parse.
+#
+# Every gate below asserts something and can fail the run. See ops/ci/README.md.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    name: Manifest pre-flight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Fast, readable version of a failure that otherwise looks like an inscrutable
+      # 5-second cargo error on every OS at once: a member declaring `foo.workspace =
+      # true` for a dependency the root table does not define breaks the ENTIRE
+      # workspace (this happened: `anyhow` was dropped from [workspace.dependencies]).
+      - name: Every workspace dependency reference must resolve
+        run: |
+          python3 - <<'PYEOF'
+          import sys, tomllib
+          from pathlib import Path
+          root = tomllib.load(open("Cargo.toml", "rb"))
+          defined = set(root["workspace"].get("dependencies", {}))
+          bad = []
+          for p in sorted(Path(".").rglob("Cargo.toml")):
+              if p == Path("Cargo.toml"):
+                  continue
+              t = tomllib.load(open(p, "rb"))
+              for table in ("dependencies", "dev-dependencies", "build-dependencies"):
+                  for name, spec in (t.get(table) or {}).items():
+                      if isinstance(spec, dict) and spec.get("workspace") and name not in defined:
+                          bad.append(f"{p}: [{table}] {name}.workspace = true, but the root [workspace.dependencies] does not define {name!r}")
+              # declared paths must exist
+              for kind in ("bin", "example", "test"):
+                  for entry in t.get(kind) or []:
+                      if "path" in entry:
+                          f = p.parent / entry["path"]
+                          if not f.exists():
+                              bad.append(f"{p}: [[{kind}]] path {entry['path']!r} does not exist")
+          if bad:
+              print("::error::cargo manifest pre-flight failed")
+              for b in bad:
+                  print("  -", b)
+              sys.exit(1)
+          print("manifests consistent: workspace deps resolve, declared bin/example/test paths exist")
+          PYEOF
+
+  build:
+    name: Build (${{ matrix.os }})
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock', '**/Cargo.toml') }}
+          restore-keys: ${{ runner.os }}-cargo-
+
+      # `--all-targets` also builds examples, tests and benches: the missing example
+      # that broke every build here would have been caught by this single flag.
+      - name: Build (all targets, default features)
+        run: cargo build --workspace --all-targets --verbose
+
+      - name: Build (release, piper feature)
+        run: cargo build --workspace --release --features vocal-core/piper --verbose
+
+  test:
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Unit + integration tests
+        run: cargo test --workspace --all-targets --verbose
+      - name: Tests in release mode
+        run: cargo test --workspace --release --verbose
+
+  offline-invariance:
+    name: "VOICE_INV_001 — synthesis with network namespace removed"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build test binary first (needs network)
+        run: cargo test --workspace --no-run
+
+      # The old job printed "VOICE_INV_001 validated" unconditionally. This one removes
+      # the network namespace so a stray DNS/TCP call genuinely fails. Cargo offline mode
+      # is also on, so a dependency that slipped in cannot be fetched mid-test.
+      - name: Run tests with no network access
+        # sudo is used only to obtain a user+net namespace reliably; GitHub-hosted
+        # ubuntu runners provide passwordless sudo. On self-hosted/container runners
+        # this needs CAP_SYS_ADMIN or --privileged — if it cannot isolate, the job
+        # fails rather than quietly reporting success.
+        run: |
+          set -euo pipefail
+          sudo unshare -rn --preserve-env=CARGO_HOME,PATH \
+            env CARGO_NET_OFFLINE=true \
+            cargo test --workspace --offline --all-targets -- --nocapture
+
+      - name: Prove the isolation actually applied
+        run: |
+          set -euo pipefail
+          if sudo unshare -rn -- getent hosts crates.io >/dev/null 2>&1; then
+            echo "::error::network isolation did not apply — this job would be meaningless"
+            exit 1
+          fi
+          echo "confirmed: no DNS inside the test namespace"
+
+  voice-packs:
+    name: Voice pack integrity (real gate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify every shipped .cvpack against its own manifest
+        run: python3 scripts/build-voice-packs.py verify
+
+      - name: Rebuild packs and fail on drift from committed dist/
+        run: |
+          python3 scripts/build-voice-packs.py build
+          git diff --exit-code voice-packs/dist/ || {
+            echo "::error voice-packs/dist is stale — run: python3 scripts/build-voice-packs.py build"
+            exit 1
+          }
+
+      # Informational, on purpose: there is no real model in this repo yet, so a hard
+      # gate here would keep CI permanently red. It is a visible ✗ with an explanation
+      # instead, and flips to blocking the moment a model is committed.
+      - name: Real model readiness (informational)
+        continue-on-error: true
+        run: |
+          if python3 scripts/build-voice-packs.py build --require-real-models --out /tmp/packs; then
+            echo "real models present"
+          else
+            echo "::warning::NO REAL VOICE MODEL IN THIS REPO — voice-packs/*/model.onnx are placeholders."
+            echo "::warning::Nothing here can synthesize speech. See docs/ROADMAP_EMBEDDED.md."
+            exit 1
+          fi
+
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+      - name: clippy (default features)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      # NOT `--all-features`, and that is load-bearing. An optional dependency implicitly
+      # becomes a feature of the same name, so --all-features enables `ort` even when no
+      # named feature asks for it — and ort's default features run a build script that
+      # downloads prebuilt ONNX Runtime. The live workflow does exactly this, which is why
+      # its "Linting (clippy)" job dies inside a dependency and reports zero diagnostics
+      # for this workspace. Feature sets are named explicitly here instead.
+      - name: clippy (piper feature)
+        run: cargo clippy --workspace --all-targets --features vocal-core/piper -- -D warnings
+
+  supply-chain:
+    name: Dependency & licensing audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cargo.lock must exist and be committed
+        run: |
+          test -f Cargo.lock || { echo "::error::Cargo.lock missing — commit it for reproducible binary builds"; exit 1; }
+
+      - name: No cloud / LLM / network clients anywhere in the dependency graph
+        # Greps the RESOLVED graph, not just the manifest text: the previous job
+        # grepped Cargo.toml (and a Cargo.lock that did not exist).
+        run: |
+          set -euo pipefail
+          cargo tree --workspace --all-targets -e normal,dev > /tmp/deps.txt 2>/dev/null || cargo metadata --format-version 1 > /tmp/meta.json
+          if [ -f /tmp/deps.txt ]; then DEPS=/tmp/deps.txt; else DEPS=/tmp/meta.json; fi
+          for bad in reqwest hyper openssl aws-sdk azure_core azure-sdk anthropic openai elevenlabs huggingface hf-hub tungstenite; do
+            if grep -qi "$bad" "$DEPS"; then
+              echo "::error::$bad found in the dependency graph — the core runtime must have no network path"
+              exit 1
+            fi
+          done
+          echo "dependency graph clean of network/LLM clients"
+
+      - name: Voice-pack license provenance is not fabricated
+        run: |
+          python3 - <<'PY'
+          import json, sys, zipfile
+          from pathlib import Path
+          bad = []
+          for pack in sorted(Path("voice-packs/dist").glob("*.cvpack")):
+              with zipfile.ZipFile(pack) as zf:
+                  m = json.loads(zf.read("manifest.json"))
+              placeholder = m.get("status") == "placeholder"
+              prov = m.get("provenance") or {}
+              if not placeholder:
+                  for key in ("training_data_statement", "model_license", "dataset_attribution"):
+                      if not (prov.get(key) or "").strip():
+                          bad.append(f"{pack.name}: real pack without provenance.{key}")
+                  if prov.get("consent_obtained") is not True:
+                      bad.append(f"{pack.name}: real pack without consent_obtained=true")
+              else:
+                  if prov.get("consent_obtained") is True:
+                      bad.append(f"{pack.name}: PLACEHOLDER pack asserts consent_obtained=true for a model that does not exist")
+                  for key in ("model_license", "training_data_statement", "dataset_attribution"):
+                      if prov.get(key):
+                          bad.append(f"{pack.name}: PLACEHOLDER pack asserts provenance.{key}={prov[key]!r} for a model that does not exist")
+          if bad:
+              print("::error::fabricated or missing provenance")
+              for b in bad:
+                  print("  -", b)
+              sys.exit(1)
+          print("provenance declarations match the actual pack contents")
+          PY
+
+      - name: cargo deny / audit (advisory)
+        continue-on-error: true
+        run: |
+          cargo install cargo-audit --locked --quiet || true
+          cargo audit || echo "::warning::cargo audit reported issues (advisory only for now)"
+
+  docs-truth:
+    name: Docs must not overclaim capability
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The failure mode this guards: README, AGENTS.md and PHASE1_COMPLETE.md asserted
+      # "compiles cleanly", "voices load and produce audio" and "TypeScript SDK
+      # established" while the build was red, every shipped pack failed validation, and
+      # synthesis was a TODO. Instead of trusting prose, this job checks docs against
+      # machine-verifiable facts.
+      - name: Capability statement must match the code
+        run: |
+          set -euo pipefail
+          # Same lesson as the step below, applied here too: the source declares
+          # `REAL_SYNTHESIS_AVAILABLE: bool = false`, so a grep that expects the value immediately
+          # after the name matched nothing, and under `set -euo pipefail` this step died on its
+          # first line — the job could never reach either check. Read the flag once, permissively,
+          # and treat an unreadable flag as an error rather than a skip.
+          AVAIL=$(grep -E 'REAL_SYNTHESIS_AVAILABLE: *(bool *)?=' crates/vocal-core/src/lib.rs \
+                  | tail -1 | grep -oE '(true|false)' | tail -1 || true)
+          if [ -z "$AVAIL" ]; then
+            echo "::error::could not read REAL_SYNTHESIS_AVAILABLE from crates/vocal-core/src/lib.rs"
+            exit 1
+          fi
+          echo "vocal_core::REAL_SYNTHESIS_AVAILABLE = $AVAIL"
+          if [ "$AVAIL" = "false" ]; then
+            grep -q "No audible voice" README.md || {
+              echo "::error::README must state 'No audible voice' while no real backend exists"; exit 1; }
+          else
+            grep -q "No audible voice" README.md && {
+              echo "::error::docs still say there is no audible voice although a backend now exists"; exit 1; } || true
+          fi
+
+      - name: No stale false claims
+        run: |
+          set -euo pipefail
+          # Read the flag from its declaration. The first version of this line grepped for
+          # `NAME: (true|false)` and the source says `NAME: bool = false`, so AVAIL was empty,
+          # `[ "$AVAIL" = "false" ]` was false, and every check below was silently skipped.
+          # A gate that cannot run is worse than no gate, so an unreadable flag is now an error.
+          AVAIL=$(grep -E 'REAL_SYNTHESIS_AVAILABLE: *(bool *)?=' crates/vocal-core/src/lib.rs \
+                  | tail -1 | grep -oE '(true|false)' | tail -1 || true)
+          if [ -z "$AVAIL" ]; then
+            echo "::error::could not read REAL_SYNTHESIS_AVAILABLE from crates/vocal-core/src/lib.rs - this job would skip every claim check below, which is the exact failure mode it exists to catch"
+            exit 1
+          fi
+          if [ "$AVAIL" = "false" ]; then
+            # Narrow, literal denylist of claims that were made and were false.
+            if grep -nE "load and produce audio|compiles cleanly \(all platforms\)|Unit tests pass with coverage|ALL PHASE 1 EXIT CRITERIA PASSED|TypeScript Web SDK \(both" \
+                README.md AGENTS.md docs/architecture/*.md docs/api/*.md docs/personas/*.md 2>/dev/null; then
+              echo "::error::docs assert capabilities that do not exist in this tree"; exit 1
+            fi
+            # PHASE1_COMPLETE.md is the historical record: it is allowed to quote the
+            # false claims verbatim, but only inside a correction. Require the marker.
+            grep -q "CORRECTION" PHASE1_COMPLETE.md || {
+              echo "::error::PHASE1_COMPLETE.md must carry the correction banner"; exit 1; }
+          fi
+          echo "no stale false capability claims found"
+
+      - name: Documented directory structure must exist
+        run: |
+          set -euo pipefail
+          # README described a monorepo layout (packages/, engines/, voices/, tools/,
+          # tests/, research/) that does not match the tree on disk.
+          for d in $(grep -oE '^├── [a-z_-]+/|^└── [a-z_-]+/' README.md | awk '{print $2}'); do
+            if [ ! -d "$d" ]; then echo "::error::README documents '$d' but it does not exist"; exit 1; fi
+          done
+          for d in crates/vocal-core crates/voice-pack apps/chiti-voice-cli voice-packs docs scripts; do
+            test -d "$d" || { echo "::error::missing expected directory $d (docs and reality disagree)"; exit 1; }
+          done
+          echo "documented layout matches the repository"
+
+      - name: Text files must be valid UTF-8 (no mojibake, no replacement chars)
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          exts = {".md", ".rs", ".toml", ".json", ".yml", ".py", ".ps1"}
+          bad = []
+          for path in Path(".").rglob("*"):
+              if path.is_dir() or ".git" in path.parts or path.suffix not in exts:
+                  continue
+              raw = path.read_bytes()
+              try:
+                  text = raw.decode("utf-8")
+              except UnicodeDecodeError as e:
+                  bad.append(f"{path}: invalid UTF-8 at byte {e.start} (this breaks markdown renderers and clippy diffs)")
+                  continue
+              if "\ufffd" in text:
+                  bad.append(f"{path}: contains {text.count(chr(0xfffd))} U+FFFD replacement char(s) — mangled em dashes from a cp1252 pipeline")
+          if bad:
+              print("::error::encoding hygiene")
+              for b in bad:
+                  print("  -", b)
+              raise SystemExit(1)
+          print("all text files are clean UTF-8")
+          PY
+
+      # Two ways this step was wrong before, both worth keeping in the record: it looked only at
+      # README.md, so a broken link inside docs/** was invisible, and it resolved every link from the
+      # repository root, so a correct relative link in a nested file (../research/x.md) reported as
+      # broken while the wrong one (./docs/x.md, written when the file had moved to docs/api/) passed.
+      # Both directions of wrong. Link resolution now belongs to the script below, which is per-file
+      # and covers every markdown file in the tree; this step keeps only the two existence checks.
+      - name: Files the README points at must exist
+        run: |
+          set -euo pipefail
+          missing=0
+          test -f LICENSE || { echo "MISSING: LICENSE (README references it)"; missing=1; }
+          test -f .gitignore || { echo "MISSING: .gitignore"; missing=1; }
+          exit $missing
+
+      # Run the canary first. A doc gate that silently scans nothing is the failure this repository
+      # has now hit three times in different clothes -- a grep pointed at a renamed directory, a
+      # wrapper whose body had been deleted, and a rewritten checker that lost its file loop and
+      # reported a clean tree in under a second. So the gate must prove it can fail before anyone
+      # believes it when it says the docs are clean.
+      - name: The doc-claims gate must prove it can fail
+        run: python3 scripts/verify-doc-claims.py --self-test
+
+      - name: Documented path claims must resolve
+        run: python3 scripts/verify-doc-claims.py
+
+      # Packs are data, and data rots silently. `voice-packs/*/manifest.json` claims numbers that
+      # live in docs/personas/*.md and docs/research/persona-recipes/*.json; and `voice-packs/dist/`
+      # is a checked-in artifact rebuilt from them. Either can fall behind without touching Rust —
+      # which is how a schema change once passed every unit test while shipping stale packs. So CI
+      # regenerates both and fails on any diff.
+      - name: Shipped packs must match their sources
+        run: |
+          set -euo pipefail
+          python3 scripts/sync-persona-manifests.py --check
+          python3 scripts/build-voice-packs.py build
+          python3 scripts/build-voice-packs.py verify
+          git diff --exit-code voice-packs/ || {
+            echo "::error voice-packs/ is stale: commit the regenerated manifests and dist packs,"
+            echo "   or run 'python3 scripts/sync-persona-manifests.py && python3 scripts/build-voice-packs.py build'."
+            exit 1
+          }

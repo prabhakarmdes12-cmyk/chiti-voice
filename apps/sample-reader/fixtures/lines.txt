@@ -1,0 +1,9 @@
+# Sample corpus for apps/sample-reader. These are phoneme strings, not orthography: the engine's
+# input is a phoneme sequence and this repository has no grapheme-to-phoneme converter in Rust.
+# See docs/research/KOKORO_OFFLINE_SPIKE.md for the Python path that produces strings like these.
+# A line of N characters encodes to N + 2 ids: vocal_core::phoneme_tokens::encode frames the sequence with
+# PAD at both ends. Size input_ids from the encoded length, not the character count.
+hələʊ wɜːld
+ˈtʃɪti ˈvəʊkəl rʌnˈtaɪm ɒn ðə dɪˈvaɪs
+gæʊ əˈweɪ ðɪs ˈɡʌf ɪz ˈæʃɪd ɪn ˈækʃən
+hɛləʊ ˈwɜːld əv ˈaʊdʒoʊ ɪz ˈhɪə tə riːd ðɪz ˈliːn ænd pleɪn ænd kaʊnt ðəm ˈɔːl əˈkeɪ

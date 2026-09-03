@@ -259,7 +259,7 @@ A developer should be able to install a voice, call `speak()`, and have it work 
 | ID | Description | Acceptance Criteria | Priority |
 |----|-------------|---------------------|----------|
 | FR-007 | Vocal Core MUST expose a `VoiceEngine` interface/trait that all TTS backends implement. | Two different backends (e.g., Kokoro, Piper) can be swapped by changing one configuration line with no application code changes. | **P0** |
-| FR-008 | No application code MAY directly instantiate a backend implementation. All synthesis MUST go through the `VoiceEngine` interface. | Code review gate: grep for direct backend instantiation in `apps/` and `packages/` returns zero results. | **P0** |
+| FR-008 | No application code MAY directly instantiate a backend implementation. All synthesis MUST go through the `VoiceEngine` interface. | Code review gate: grep for direct backend instantiation in `apps/` returns zero results (the same grep over `packages/` applies once the SDK exists; that directory does not exist yet). | **P0** |
 | FR-009 | The active backend MUST be declared in the voice pack manifest or in a runtime configuration file, not hardcoded. | Backend can be changed via manifest edit alone; no recompile required. | **P0** |
 
 ### 7.4 Voice Pack Installation and Validation
@@ -491,20 +491,29 @@ A developer should be able to install a voice, call `speak()`, and have it work 
 
 These invariants are non-negotiable architectural rules. Violation of any invariant is a critical defect regardless of whether tests pass.
 
+> **Invariant IDs follow `docs/architecture/INVARIANTS.md`, which is the source of truth.** Code
+> comments, `SECURITY.md` and `STATE_MACHINE.md` all cite those IDs, and `scripts/verify-doc-claims.py`
+> fails a document that pairs an ID with a different name. This table previously re-used IDs
+> `VOICE_INV_003`-`012` for seven *different* requirements, so "implement VOICE_INV_008" meant
+> loopback binding here and voice provenance everywhere else. Rows marked **PRD-only** state real
+> requirements that no canonical invariant covers yet; they carry no ID rather than a conflicting one.
+
+
+
 | ID | Name | Statement | Testable |
 |----|------|-----------|----------|
-| VOICE_INV_001 | Offline Synthesis | Synthesis MUST complete with no network connectivity. | Yes |
+| VOICE_INV_001 | Offline Independence | Synthesis MUST complete with no network connectivity. | Yes |
 | VOICE_INV_002 | LLM Independence | The synthesis pipeline MUST NOT require any LLM component. | Yes |
-| VOICE_INV_003 | Language-Voice Separation | Language generation and voice generation are independent systems. The voice layer accepts text; it does not generate it. | Yes (dependency audit) |
-| VOICE_INV_004 | Engine Interface | All TTS backends MUST be accessed exclusively through the `VoiceEngine` interface. | Yes (static analysis) |
-| VOICE_INV_005 | No Direct Backend Instantiation | No application or library outside of `vocal-core` MAY directly instantiate a backend. | Yes (code review gate) |
-| VOICE_INV_006 | Persona Isolation | Loading or using one persona MUST NOT affect another persona's parameters. | Yes |
-| VOICE_INV_007 | Persona Config Separation | Persona configuration is structurally separate from acoustic model files in every voice pack. | Yes (schema validation) |
-| VOICE_INV_008 | Loopback Only | The local daemon MUST bind only to `127.0.0.1`. | Yes (network inspection) |
-| VOICE_INV_009 | No Telemetry | The runtime MUST emit zero outbound telemetry in any build configuration. | Yes (network audit) |
-| VOICE_INV_010 | Pack Integrity | A voice pack with a failed checksum MUST be rejected before any model files are loaded. | Yes |
-| VOICE_INV_011 | No Executable Content | Voice packs MUST NOT contain any executable files; any such pack is rejected. | Yes |
-| VOICE_INV_012 | RTF Bound | No production voice pack MAY ship with an RTF ≥ 1.0 on reference hardware. | Yes (benchmark gate) |
+| -- | Language-Voice Separation (PRD-only) | The voice layer accepts text; it does not generate it. No canonical invariant defines this yet. | Yes (dependency audit) |
+| -- | Engine Interface (PRD-only) | All TTS backends MUST be accessed exclusively through the `VoiceEngine` interface. No canonical invariant defines this yet. | Yes (static analysis) |
+| -- | No Direct Backend Instantiation (PRD-only) | No application or library outside of `vocal-core` MAY directly instantiate a backend. | Yes (code review gate) |
+| VOICE_INV_004 | Persona Independence | Loading or using one persona MUST NOT affect another persona's parameters. | Yes |
+| -- | Persona Config Separation (PRD-only) | Persona configuration is structurally separate from acoustic model files in every voice pack. | Yes (schema validation) |
+| -- | Loopback Only (PRD-only, a clause of VOICE_INV_007) | The local daemon MUST bind only to `127.0.0.1`. | Yes (network inspection) |
+| -- | No Telemetry (PRD-only, a clause of VOICE_INV_007) | The runtime MUST emit zero outbound telemetry in any build configuration. | Yes (network audit) |
+| -- | Pack Integrity (PRD-only, enforced by VOICE_INV_008) | A voice pack with a failed checksum MUST be rejected before any model files are loaded. | Yes |
+| -- | No Executable Content (PRD-only) | Voice packs MUST NOT contain any executable files; rejected by extension today (see `security.rs`), so an extensionless binary still loads. | Yes |
+| -- | RTF Bound (PRD-only) | No production voice pack MAY ship with an RTF >= 1.0 on reference hardware. | Yes (benchmark gate) |
 
 ---
 
@@ -618,7 +627,7 @@ The following checklist must be fully satisfied before v0.1 is tagged for releas
 - [ ] **Path traversal pack rejected** — a malicious pack with `../` paths is rejected with `PACK_PATH_TRAVERSAL`
 - [ ] **No LLM dependency** — dependency audit finds zero LLM-related packages in `vocal-core` and `voice-web`
 - [ ] **No cloud dependency** — dependency audit finds zero outbound HTTP clients in synthesis path
-- [ ] **Licenses documented** — all third-party licenses (Kokoro/Piper model, ONNX Runtime, etc.) are catalogued in `docs/LICENSES_THIRD_PARTY.md`
+- [ ] **Licenses documented** — the catalogue exists (`docs/LICENSES_THIRD_PARTY.md`, written 2026-09-03) and records what is verified; the box stays unchecked because two entries there are still open: Kokoro's weight licence and the crate-level audit
 - [ ] **RTF ≤ 1.0** — benchmark on reference hardware shows RTF < 1.0 for all three voices
 - [ ] **Loopback binding verified** — `netstat` inspection confirms daemon is not bound to `0.0.0.0`
 - [ ] **Error codes tested** — all typed errors in Section 15 have at least one test that triggers and verifies the error

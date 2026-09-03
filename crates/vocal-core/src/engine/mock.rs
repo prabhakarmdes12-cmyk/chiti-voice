@@ -90,7 +90,7 @@ impl crate::engine::VoiceEngine for MockEngine {
             .ok_or_else(|| {
                 crate::error::VoiceError::new(
                     VoiceErrorCode::VoiceNotFound,
-                    format!("Voice not found: {}", voice_id),
+                    format!("Voice not found: {voice_id}"),
                 )
             })
     }
@@ -115,21 +115,20 @@ impl crate::engine::VoiceEngine for MockEngine {
         })
     }
 
-    async fn stream(
-        &self,
-        request: &SynthesisRequest,
-    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>> {
+    async fn stream(&self, request: &SynthesisRequest) -> VoiceResult<crate::engine::AudioStream> {
         let request = request.clone();
         let sample_rate = self.sample_rate;
 
-        let future = Box::new(async move {
+        let future = async move {
             let estimated_duration = (request.text.len() as f32) / 100.0;
             let num_samples = (estimated_duration * sample_rate as f32) as usize;
             let silence = vec![0u8; num_samples * 4];
             Ok(silence)
-        });
+        };
 
-        Ok(future)
+        // Box::pin, not Box::new: see the trait docs on why the caller must be able
+        // to poll this without knowing the concrete future type.
+        Ok(Box::pin(future))
     }
 
     async fn stop(&self) -> VoiceResult<()> {
@@ -144,6 +143,10 @@ impl crate::engine::VoiceEngine for MockEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The trait is implemented via a fully-qualified path above
+    // (`impl crate::engine::VoiceEngine for ...`), so its methods are not in
+    // scope here unless the trait itself is imported.
+    use crate::engine::VoiceEngine;
 
     #[tokio::test]
     async fn test_mock_engine_initialization() {
@@ -178,7 +181,8 @@ mod tests {
     fn test_generate_silence() {
         let engine = MockEngine::new();
         let silence = engine.generate_silence(1.0); // 1 second
-        let expected_bytes = 1 * 22050 * 4; // 1 second * sample rate * 4 bytes per sample
+                                                    // 1 second * 22050 samples/s * 4 bytes/sample (f32)
+        let expected_bytes = 22050 * 4;
         assert_eq!(silence.len(), expected_bytes);
     }
 }

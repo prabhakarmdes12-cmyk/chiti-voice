@@ -5,7 +5,7 @@
   "version": "1.0.0",
   "author": "Chiti Technologies",
   "license": "Proprietary",
-  "description": "Warm, professional voice for Indian English. Suitable for business, hospitality, and customer-facing applications.",
+  "description": "Warm, professional voice for Indian English. Suitable for business, hospitality, and customer-facing applications. [PLACEHOLDER PACK — no model, cannot synthesize speech]",
   "engine_family": "piper",
   "engine_version_min": "1.0.0",
   "supported_languages": [
@@ -30,40 +30,96 @@
     "display_name": "Tara",
     "description": "Warm, professional Indian English female-presenting voice",
     "default_rate": 1.0,
-    "default_pitch": 1.0,
+    "default_pitch": 0.0,
+    "pitch_baked_into_style": false,
+    "style": {
+      "blend": [
+        {
+          "voice": "af_bella",
+          "weight": 0.4
+        },
+        {
+          "voice": "af_heart",
+          "weight": 0.35
+        },
+        {
+          "voice": "af_aoede",
+          "weight": 0.25
+        }
+      ]
+    },
+    "loudness": {
+      "target_dbfs": -21.0,
+      "peak_ceiling": 0.98,
+      "max_gain_db": 12.0
+    },
+    "pronunciation_overrides": {
+      "chiti": "ˈtʃɪti"
+    },
+    "chunking": {
+      "max_units": 509,
+      "min_chunk_units": 8
+    },
     "intent_profiles": {
-      "warm": {
-        "rate": 0.95,
-        "pitch": 1.0,
-        "energy": 1.1,
+      "GREETING": {
+        "rate": 1.05,
+        "pitch": 0.0,
+        "energy": 0.65,
         "pause_factor": 1.0
       },
-      "calm": {
-        "rate": 0.90,
-        "pitch": 0.95,
-        "energy": 0.9,
-        "pause_factor": 1.1
+      "QUESTION": {
+        "rate": 1.0,
+        "pitch": 0.0,
+        "energy": 0.55,
+        "pause_factor": 1.0
       },
-      "alert": {
-        "rate": 1.1,
-        "pitch": 1.05,
-        "energy": 1.2,
-        "pause_factor": 0.9
-      },
-      "greeting": {
+      "CONFIRMATION": {
         "rate": 0.95,
-        "pitch": 1.05,
-        "energy": 1.15,
+        "pitch": 0.0,
+        "energy": 0.5,
+        "pause_factor": 1.0
+      },
+      "WARNING": {
+        "rate": 0.9,
+        "pitch": 0.0,
+        "energy": 0.45,
+        "pause_factor": 1.0
+      },
+      "ERROR": {
+        "rate": 0.88,
+        "pitch": 0.0,
+        "energy": 0.4,
+        "pause_factor": 1.0
+      },
+      "CELEBRATION": {
+        "rate": 1.1,
+        "pitch": 0.0,
+        "energy": 0.75,
+        "pause_factor": 1.0
+      },
+      "GOODBYE": {
+        "rate": 0.95,
+        "pitch": 0.0,
+        "energy": 0.55,
+        "pause_factor": 1.0
+      },
+      "ANNOUNCEMENT": {
+        "rate": 1.0,
+        "pitch": 0.0,
+        "energy": 0.6,
         "pause_factor": 1.0
       }
     }
   },
   "provenance": {
-    "training_data_statement": "Trained on Piper Indian English dataset",
-    "model_license": "Apache 2.0",
-    "consent_obtained": true,
-    "dataset_attribution": "Piper TTS Project (Mozilla/Rhasspy)",
-    "build_timestamp": "2026-09-02T00:00:00Z",
-    "signature_status": "UNSIGNED"
-  }
+    "training_data_statement": null,
+    "model_license": null,
+    "consent_obtained": null,
+    "dataset_attribution": null,
+    "build_timestamp": "2026-09-03T00:00:00Z",
+    "signature": null,
+    "signature_status": "UNSIGNED",
+    "notes": "NO MODEL IS PRESENT IN THIS PACK. model.onnx is a placeholder written by scripts/build-voice-packs.py, so the fields above are unknown rather than false. The previous revision of this file asserted consent_obtained=true and model_license='Apache 2.0' for a file that did not exist. When a real model is added, fill these fields from that model's actual model card: Piper's engine is MIT but voice models are licensed PER VOICE (CC0/CC-BY/CC-BY-SA and some non-commercial), and Piper's phonemization backend espeak-ng is GPL-3.0. Do not copy a license string; verify it."
+  },
+  "status": "placeholder"
 }

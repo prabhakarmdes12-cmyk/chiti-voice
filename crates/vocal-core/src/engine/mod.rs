@@ -48,7 +48,14 @@ pub enum EngineHealth {
 ///
 /// All backend implementations (Piper, Kokoro, etc.) must implement this trait.
 /// This design ensures that applications never depend directly on a specific backend.
-#[async_trait::async_trait]
+/// One chunk of synthesized audio, streamed.
+///
+/// Pinned at construction so any caller can `await` it without knowing the concrete
+/// future type; `Box<dyn Future>` alone is `!Unpin` and cannot be polled.
+pub type AudioStream =
+    std::pin::Pin<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>;
+
+#[async_trait]
 pub trait VoiceEngine: Send + Sync {
     /// Initialize the engine (load models, allocate memory, etc.)
     async fn initialize(&mut self) -> VoiceResult<()>;
@@ -62,14 +69,23 @@ pub trait VoiceEngine: Send + Sync {
     /// Get capabilities of a specific voice
     async fn voice_capabilities(&self, voice_id: &str) -> VoiceResult<VoiceCapabilities>;
 
-    /// Perform synthesis and return complete audio
+    /// Perform synthesis and return complete audio.
+    ///
+    /// An engine that cannot synthesize at all must report
+    /// [`VoiceErrorCode::EngineNotAvailable`](crate::error::VoiceErrorCode::EngineNotAvailable)
+    /// *before* validating the request, so callers can tell "this build has no voice"
+    /// apart from "fix your request and retry".
     async fn synthesize(&self, request: &SynthesisRequest) -> VoiceResult<SynthesisResponse>;
 
-    /// Perform streaming synthesis (returns first chunk quickly)
-    async fn stream(
-        &self,
-        request: &SynthesisRequest,
-    ) -> VoiceResult<Box<dyn std::future::Future<Output = VoiceResult<Vec<u8>>> + Send>>;
+    /// Perform streaming synthesis (returns first chunk quickly).
+    ///
+    /// The returned future is `Pin<Box<…>>` on purpose. It used to be a bare
+    /// `Box<dyn Future>`, which no caller can poll: `dyn Future` is `!Unpin`, so
+    /// `boxed_future.await` is rejected with E0277 and the method was effectively
+    /// unusable through the trait object (only reachable in a test that pinned it
+    /// locally). Pinning at the source keeps `stream()` callable generically while
+    /// still being `Send` for task spawning.
+    async fn stream(&self, request: &SynthesisRequest) -> VoiceResult<AudioStream>;
 
     /// Stop any in-progress synthesis
     async fn stop(&self) -> VoiceResult<()>;
@@ -99,7 +115,8 @@ impl VoiceEngineRegistry {
 
     /// Register a new voice engine
     pub fn register(&mut self, name: String, engine: BoxedEngine) {
-        self.engines.insert(name, Arc::new(tokio::sync::Mutex::new(engine)));
+        self.engines
+            .insert(name, Arc::new(tokio::sync::Mutex::new(engine)));
     }
 
     /// Get a registered engine

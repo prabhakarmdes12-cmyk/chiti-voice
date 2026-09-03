@@ -1,0 +1,63 @@
+{
+  "persona": "bobo",
+  "kind": "derived-blend — not a speaker; a derivative work of the source voices",
+  "sources": [
+    {
+      "voice": "am_santa",
+      "weight": 0.4
+    },
+    {
+      "voice": "af_jessica",
+      "weight": 0.35
+    },
+    {
+      "voice": "bf_alice",
+      "weight": 0.25
+    }
+  ],
+  "blend_rule": "elementwise weighted sum over the full 510x256 f32 matrix (every row)",
+  "speed": 1.15,
+  "espeak_voice": "en-us",
+  "text": "Two minutes left, and the pie is still hot — shall I hurry?",
+  "model": "kokoro-quantized.onnx (pin its sha256 and each source vector's before reproducing)",
+  "loudness": {
+    "target_dbfs": -17.5,
+    "peak_ceiling": 0.98,
+    "max_gain_db": 12.0
+  },
+  "provenance_status": "incomplete by design — VOICE_INV_008 must keep refusing this as a 'real' pack",
+  "measured": {
+    "f0_median_hz": 203.4,
+    "f0_range_hz": 166.5,
+    "phonemes_per_s": 18.39,
+    "level_dbfs": -20.4,
+    "peak": 0.98,
+    "duration_s": 3.425
+  },
+  "sources_measured": [
+    {
+      "voice": "am_santa",
+      "weight": 0.4,
+      "f0_median_hz": 206.9,
+      "f0_range_hz": 254.1,
+      "phonemes_per_s": 17.5,
+      "level_dbfs": -22.6
+    },
+    {
+      "voice": "af_jessica",
+      "weight": 0.35,
+      "f0_median_hz": 206.9,
+      "f0_range_hz": 212.5,
+      "phonemes_per_s": 19.53,
+      "level_dbfs": -22.5
+    },
+    {
+      "voice": "bf_alice",
+      "weight": 0.25,
+      "f0_median_hz": 224.3,
+      "f0_range_hz": 181.1,
+      "phonemes_per_s": 18.0,
+      "level_dbfs": -21.1
+    }
+  ]
+}

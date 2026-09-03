@@ -27,6 +27,12 @@ impl SynthesisFormat {
         }
     }
 
+    /// Deliberately an inherent `Option`-returning helper rather than
+    /// `impl std::str::FromStr`: there is no error worth carrying for an unknown format
+    /// name (every caller already knows its own vocabulary and maps the failure onto its
+    /// own error type — the CLI onto a usage error, the pack loader onto a schema error),
+    /// and `FromStr` would force an `Err` type onto the whole crate for no benefit.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "pcm_f32" => Some(Self::PcmF32),
@@ -55,10 +61,19 @@ pub struct SynthesisRequest {
     /// Desired output format
     #[serde(default)]
     pub format: Option<SynthesisFormat>,
-    /// Synthesis speed/rate multiplier (0.5 = half speed, 2.0 = double speed)
+    /// Speed multiplier, the one prosody input the engine family actually has. 0.5 = half speed,
+    /// 2.0 = double; 0.5..=1.6 is the band measured as intelligible, and it is the band
+    /// `voice-pack` allows a persona to declare.
     #[serde(default)]
     pub rate: Option<f32>,
-    /// Pitch multiplier (1.0 = normal, 2.0 = higher pitch)
+    /// Pitch **offset**, with the same units and neutral value (0.0) as
+    /// `voice_pack::PersonaConfig::default_pitch` — not a multiplier. This pair used to disagree
+    /// about what "pitch" meant while neither could be applied, which is the bug the schema now
+    /// refuses: `PersonaConfig::default_pitch == 1.0` (a multiplier reading) is a load-time error.
+    ///
+    /// A backend has exactly two honest options for a non-zero value: realise it by selecting a
+    /// different style vector (register is baked into the cast, see `pitch_baked_into_style`), or
+    /// return an error. Silently ignoring it is what made the old packs lie.
     #[serde(default)]
     pub pitch: Option<f32>,
     /// Intent/style label (e.g., "warm", "calm", "alert")
@@ -133,7 +148,10 @@ pub struct SynthesisResponse {
 }
 
 mod serde_arrays {
-    use serde::{Deserializer, Serializer};
+    // `Deserialize` must be in scope for the `String::deserialize` call below. It was
+    // missing in the original code — a genuine compile error (E0599) that had never
+    // surfaced because the workspace manifest prevented the crate from compiling at all.
+    use serde::{de, Deserialize, Deserializer, Serializer};
 
     pub fn serialize<S>(data: &[u8], serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -147,7 +165,7 @@ mod serde_arrays {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        hex::decode(s).map_err(serde::de::Error::custom)
+        hex::decode(&s).map_err(de::Error::custom)
     }
 }
 

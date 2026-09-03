@@ -1,0 +1,67 @@
+{
+  "persona": "kashi",
+  "kind": "derived-blend — not a speaker; a derivative work of the source voices",
+  "sources": [
+    {
+      "voice": "hm_omega",
+      "weight": 0.45
+    },
+    {
+      "voice": "am_michael",
+      "weight": 0.35
+    },
+    {
+      "voice": "bm_lewis",
+      "weight": 0.2
+    }
+  ],
+  "blend_rule": "elementwise weighted sum over the full 510x256 f32 matrix (every row)",
+  "speed": 0.92,
+  "espeak_voice": "hi",
+  "text": "आपका ड्राइवर शुक्रवार को आ रहा है।",
+  "model": "kokoro-quantized.onnx (pin its sha256 and each source vector's before reproducing)",
+  "loudness": {
+    "target_dbfs": -22.5,
+    "peak_ceiling": 0.98,
+    "max_gain_db": 12.0
+  },
+  "chunking": {
+    "max_units": 509,
+    "min_chunk_units": 8
+  },
+  "provenance_status": "incomplete by design — VOICE_INV_008 must keep refusing this as a 'real' pack",
+  "measured": {
+    "f0_median_hz": 113.7,
+    "f0_range_hz": 92.2,
+    "phonemes_per_s": 12.58,
+    "level_dbfs": -22.5,
+    "peak": 0.745,
+    "duration_s": 3.975
+  },
+  "sources_measured": [
+    {
+      "voice": "hm_omega",
+      "weight": 0.45,
+      "f0_median_hz": 130.4,
+      "f0_range_hz": 126.0,
+      "phonemes_per_s": 12.5,
+      "level_dbfs": -17.1
+    },
+    {
+      "voice": "am_michael",
+      "weight": 0.35,
+      "f0_median_hz": 112.1,
+      "f0_range_hz": 64.5,
+      "phonemes_per_s": 13.99,
+      "level_dbfs": -25.2
+    },
+    {
+      "voice": "bm_lewis",
+      "weight": 0.2,
+      "f0_median_hz": 95.2,
+      "f0_range_hz": 83.2,
+      "phonemes_per_s": 13.51,
+      "level_dbfs": -24.8
+    }
+  ]
+}

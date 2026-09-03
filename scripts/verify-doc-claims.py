@@ -1,0 +1,504 @@
+#!/usr/bin/env python3
+"""Fail when a document asserts, in the present tense, something the tree contradicts.
+
+This repository was founded on a defect of exactly this shape: `Cargo.toml` declared an example file
+that did not exist, `docs` described a daemon and an SDK that were never written, and a CI job ran
+`test -f tara.cvpack` and reported "three voices load successfully". Those were fixed. This script is
+what keeps them fixed, because a corrected sentence can regress as easily as the original could.
+
+Six rules, each narrow on purpose -- a broad "docs must match code" checker is unfalsifiable and gets
+deleted, which is the second way a gate dies:
+
+1. Every relative markdown link resolves to a real path.
+2. A backticked path that looks like it lives in this repo resolves, unless the sentence says it is
+   absent, removed, planned or proposed. Naming a missing file *as* missing is honest documentation and
+   the loudest lesson from the offline work: `ops/ci/README.md` has to be allowed to say that the
+   capture scripts are gone. Naming them as though they run is not.
+3. A grep/test command documented as enforcement must point at a path that exists. A check whose target
+   is absent passes trivially, which is worse than no check: it manufactures confidence. (INVARIANTS.md
+   documented `grep ... crates/chiti-vocal-core/src/` for months; that directory has not existed under
+   that name since the crates were renamed.)
+4. `docs/api/*.md` must keep their STATUS banner, and `REAL_SYNTHESIS_AVAILABLE` in `vocal-core` must
+   agree with what the README's headline row says. The two claims in this repo that a reader is most
+   likely to act on are bound to source, not to luck.
+5. An invariant ID may be paired only with the name `docs/architecture/INVARIANTS.md` gives it, in prose
+   and in source comments alike. (The PRD had reused 003-012 for nine different requirements, which is how
+   two documents could cite "VOICE_INV_008" and mean different things.)
+6. A root-level markdown file whose *name* asserts completion (`PHASE1_COMPLETE.md` and friends) must
+   carry a `CORRECTION` / `STATUS:` banner in its first 12 lines, so the title cannot outlive the body.
+
+Paths that legitimately do not exist yet (planned tests cited by an invariant's verification plan, an
+unbuilt SDK) are listed in PLANNED with a reason. That list is checked in both directions: an entry that
+starts existing is an error too, so the allowlist cannot silently accumulate.
+
+Run: python3 scripts/verify-doc-claims.py
+"""
+
+from __future__ import annotations
+
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+# Extensions that name a file in this repo, as opposed to a word that happens to contain a dot.
+KINDS = "rs|py|toml|json|md|wav|sh|ps1|bin|cvpack|onnx|txt|lock|ts|yml|yaml|dart|csv"
+
+# A backticked path. Requires a directory separator, or a repo-root filename with an extension that
+# only ever appears at the root (Cargo.lock et al. are handled by the negation rule anyway).
+PATH_TOKEN = re.compile(r"`([A-Za-z0-9_.~/-]*(?:/[A-Za-z0-9_.~*-]*)+\.(?:" + KINDS + r"))`")
+# Any dir-qualified path with a repo extension counts, not just the ones starting at a known
+# top-level directory: `persona-recipes/bobo.json` in docs/personas/BOBO.md pointed at the blend
+# recipe while the manifest derives from bobo-solo.json, and a top-level-prefix rule cannot see that.
+ANY_PATH = re.compile(r"`([A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.~*-]+)+\.(?:" + KINDS + r"))`")
+TOP = r"crates|apps|scripts|docs|ops|assets|voice-packs|models|tests|src|packages|examples"
+DIR_TOKEN = re.compile(r"`((?:" + TOP + r")/[A-Za-z0-9_./*-]*(?:/[A-Za-z0-9_./*-]*)*)`")
+COMMAND_WORDS = re.compile(r"\b(?:grep|test -f|test -e|cat|head|diff|sha256sum)\b")
+
+MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)")
+GREP_TARGET = re.compile(
+    r"(?:grep|test -f|test -e|cat|head)\s[^`|&;]*?\s([A-Za-z0-9_./*-]+(?:\.(?:" + KINDS + r")|/(?=[`:\s)])))"
+)
+
+# Sentences that speak in these registers are describing intent or history, not asserting existence.
+NEGATIONS = (
+    "absent", "does not exist", "do not exist", "did not", "doesn't", "don't", "no longer",
+    "not exist", "missing", "removed", "deleted", "retired", "gone", "never", "planned", "proposal",
+    "proposed", "to be", "not yet", "would", "superseded", "no such", "nothing", "not implemented",
+    "has been removed", "were deleted", "was deleted", "is gone", "unbuilt", "unverified",
+    "remains open", "ignored", "not committed", "no such", "none of", "neither",
+)
+
+# Paths an author has declared as intentionally-not-here, with the reason that makes it legitimate.
+PLANNED: dict[str, str] = {
+    "tests/degradation_test.rs": "invariant verification plan (VOICE_INV_005); test not yet written",
+    "tests/interruptibility_test.rs": "invariant verification plan (VOICE_INV_009); test not yet written",
+    "tests/offline_test.rs": "invariant verification plan (VOICE_INV_001 Offline Independence); test not yet written",
+    "tests/pack_verify_test.rs": "invariant verification plan (VOICE_INV_008 Voice Provenance); test not yet written",
+    "tests/persona_independence_test.rs": "invariant verification plan (VOICE_INV_004 Persona Independence); test not yet written",
+    "tests/stream_safety_test.rs": "invariant verification plan (VOICE_INV_010); test not yet written",
+    "packages/chiti-voice-sdk/src/types.ts": "the SDK is specified in docs/api, not built",
+    "docs/CVPACK_SPECIFICATION.md": "documented as a planned companion to the .cvpack format",
+}
+
+SKIP_DIRS = {".git", "target", "node_modules", ".cargo"}
+
+
+def canonical_invariants() -> tuple[dict[str, str], list[str]]:
+    """Read the ID -> Name registry from `docs/architecture/INVARIANTS.md`, the file every code
+    comment cites. Both of its forms (the `### ID — Name` headings and the `| **ID** | … | **Name** |`
+    table rows) are parsed and required to agree: the document that *defines* the IDs must not itself
+    drift, or the whole rule below rests on a broken source. Returns the map plus internal problems.
+    """
+    path = ROOT / "docs" / "architecture" / "INVARIANTS.md"
+    problems: list[str] = []
+    if not path.is_file():
+        return {}, ["INVARIANTS.md is missing, so no invariant ID can be checked against a registry"]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    from_headings = dict(re.findall(r"###\s*(VOICE_INV_\d{3})\s*[—–-]{1,2}\s*([A-Za-z][A-Za-z '’/-]+?)\s*$", text, re.M))
+    ids = re.findall(r"\| \*\*ID\*\* \| (VOICE_INV_\d{3}) \|", text)
+    names = [n.strip() for n in re.findall(r"\| \*\*Name\*\* \| ([^|]+) \|", text)]
+    from_table = dict(zip(ids, names))
+    for key in sorted(set(from_headings) | set(from_table)):
+        a, b = from_headings.get(key), from_table.get(key)
+        if a and b and a.strip() != b:
+            problems.append(f"INVARIANTS.md defines {key} as {a!r} in its heading and {b!r} in its table")
+    registry = {**from_table, **from_headings}
+    if len(registry) < 12:
+        problems.append(f"INVARIANTS.md defines only {len(registry)} invariants; 12 are expected")
+    return registry, problems
+
+
+# `ID — Name`, `| ID | Name |`, and `ID (Name)` are the three ways this repo pairs an invariant ID
+# with its name. All three must agree with the registry, because an ID paired with the wrong name is
+# how `PRD.md` came to mean "bind to loopback" by `VOICE_INV_008` while the code meant "provenance".
+ID_NAME_DASH = re.compile(r"`?(VOICE_INV_\d{3})`?\s*[—–-]{1,2}\s*([A-Z][A-Za-z ]{2,40}?)(?=\s*(?:$|[.,;:(`|]|\n))", re.M)
+ID_NAME_TABLE = re.compile(r"\|\s*`?(VOICE_INV_\d{3})`?\s*\|\s*`?([A-Z][A-Za-z0-9 '’/-]{2,44}?)`?\s*\|")
+ID_NAME_PAREN = re.compile(r"VOICE_INV_\d{3}`?\s*\(\s*([A-Z][A-Za-z '’/-]{2,40}?)\s*\)")
+
+
+def cited_invariants(text: str):
+    """Yield (id, name) pairs a document asserts, from each of the three shapes."""
+    for rx in (ID_NAME_DASH, ID_NAME_TABLE, ID_NAME_PAREN):
+        for m in rx.finditer(text):
+            ident = m.group(1) if m.re.groups >= 2 and m.re.groups == 2 else None
+            if rx is ID_NAME_PAREN:
+                yield m.group(0).split()[0].strip("`"), m.group(1)
+            else:
+                yield ident or m.group(1), m.group(2)
+
+
+def tracked_files() -> list[Path]:
+    """The files the repository actually ships.
+
+    `git ls-files` is the right oracle, not a directory walk. This repo *tracks* `voice-packs/dist/`,
+    which a walk has to skip as a build output -- and the first version of this script did skip every
+    path containing a directory named `dist`, then reported the shipped `.cvpack` files as missing. A
+    gate that invents findings is worse than no gate, because it trains people to ignore it; it nearly
+    trained me to add a PLANNED exception for a file that exists. Falls back to a walk when git is
+    unavailable or lists nothing (a source tarball, the self-test's temp tree).
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except Exception:
+        out = ""
+    listed = [Path(line) for line in out.splitlines() if line.strip()]
+    if listed:
+        return [rel for rel in listed if (ROOT / rel).is_file()]
+
+    files = []
+    for candidate in ROOT.rglob("*"):
+        if not candidate.is_file():
+            continue
+        rel = candidate.relative_to(ROOT)
+        if any(part in SKIP_DIRS for part in rel.parts):
+            continue
+        files.append(rel)
+    return files
+
+
+def has_negation(line: str) -> bool:
+    low = line.lower()
+    return any(word in low for word in NEGATIONS)
+
+
+def main() -> int:
+    files = tracked_files()
+    suffixes = {str(f) for f in files}
+    # A doc may cite `tests/dsp_parity.rs` when the file lives at
+    # `crates/vocal-core/tests/dsp_parity.rs`: crate-relative shorthand is how these documents are
+    # written, so resolve by suffix rather than forcing every citation to spell the whole path.
+    resolves = lambda token: token in suffixes or any(s.endswith("/" + token) for s in suffixes)
+
+    problems: list[str] = []
+    seen_tokens_per_line: dict = {}
+
+    for f in files:
+        if f.suffix != ".md":
+            continue
+        text = (ROOT / f).read_text(encoding="utf-8", errors="replace")
+        lines = text.splitlines()
+        # Negation is judged per paragraph, not per line: these documents wrap at ~90 columns, so a
+        # sentence routinely spans four lines and the words that make it honest ("no longer in the
+        # tree") land in a different one than the path they qualify. A line-scoped rule would flag
+        # correct prose until people switched the check off, and a switched-off check is the bug this
+        # script exists to prevent.
+        para_start, para_text = [], []
+        starts = [0] + [i + 1 for i, l in enumerate(lines) if not l.strip() and i + 1 < len(lines)]
+        for k, st in enumerate(starts):
+            en = starts[k + 1] if k + 1 < len(starts) else len(lines)
+            chunk = "\n".join(lines[st:en])
+            para_text.append(chunk)
+            para_start.append(st)
+
+        def paragraph_of(idx: int) -> str:
+            chosen = para_text[0]
+            for k, st in enumerate(para_start):
+                if st <= idx:
+                    chosen = para_text[k]
+            return chosen
+
+
+        # Rule 1: markdown links.
+        for i, line in enumerate(lines, 1):
+            for m in MD_LINK.finditer(line):
+                url = m.group(1)
+                if url.startswith(("http://", "https://", "mailto:", "#")):
+                    continue
+                target = url.split("#")[0]
+                if not target:
+                    continue
+                if not (f.parent / target).resolve().is_relative_to(ROOT.resolve()):
+                    problems.append(f"{f}:{i}: markdown link escapes the repo: {url}")
+                elif not (ROOT / f.parent / target).exists():
+                    problems.append(f"{f}:{i}: broken markdown link: {url}")
+
+        # Rules 2 and 3, as one token scan: any backticked path under a top-level project directory
+        # must resolve, whether it names a file or a directory. Directory-shaped tokens matter as much
+        # as file-shaped ones -- that is how `crates/chiti-vocal-core/src/` slipped past the first
+        # version of this script, and a grep whose target is absent is the exact theatre this repo is
+        # trying to stop producing.
+        for i, line in enumerate(lines, 1):
+            if "`" not in line:
+                continue
+            for m in list(PATH_TOKEN.finditer(line)) + list(ANY_PATH.finditer(line)) + list(DIR_TOKEN.finditer(line)):
+                token = m.group(1)
+                if token in seen_tokens_per_line.setdefault((f, i), set()):
+                    continue
+                seen_tokens_per_line[(f, i)].add(token)
+                if token.startswith("~"):
+                    continue
+                glob = "*" in token
+                check = token.split("*")[0].rstrip("/") or "."
+                target = ROOT / check
+                if glob:
+                    ok = target.exists()
+                elif target.is_dir():
+                    ok = True
+                else:
+                    ok = token in suffixes or any(s.endswith("/" + token) for s in suffixes)
+                if ok:
+                    continue
+                if has_negation(paragraph_of(i - 1)) or has_negation(line):
+                    continue  # naming an absent file as absent is the honest case
+                if token in PLANNED:
+                    continue
+                if COMMAND_WORDS.search(line):
+                    problems.append(
+                        f"{f}:{i}: a documented check targets `{token}`, which does not exist -- that "
+                        "command passes trivially and enforces nothing"
+                    )
+                else:
+                    problems.append(
+                        f"{f}:{i}: document cites `{token}` as present, and no such path exists "
+                        "(rewrite it in the past/negative tense, or add it to PLANNED with a reason)"
+                    )
+
+    # Rule 5: an invariant ID may only ever be paired with the name the registry gives it -- in
+    # markdown and in Rust doc comments, because `security.rs` citing "VOICE_INV_008" is exactly as
+    # load-bearing as a spec doing so: that comment is why the provenance check is allowed to reject a
+    # pack, and if the ID had meant "loopback binding" the reader would have concluded the check was
+    # about networking. Code gets no "proposing" exemption: a comment cannot mint an invariant.
+    registry, reg_problems = canonical_invariants()
+    problems.extend(reg_problems)
+    if registry:
+        for f in files:
+            if f.suffix != ".rs":
+                continue
+            text = (ROOT / f).read_text(encoding="utf-8", errors="replace")
+            if "VOICE_INV_" not in text:
+                continue
+            lines = text.splitlines()
+            for ident, name in set(cited_invariants(text)):
+                name = name.strip()
+                where = f"{f}"
+                hits = [i for i, l in enumerate(lines, 1) if ident in l and name in l]
+                if hits:
+                    where = f"{f}:{hits[0]}"
+                if ident not in registry:
+                    problems.append(
+                        f"{where}: cites {ident}, which docs/architecture/INVARIANTS.md does not define"
+                    )
+                elif registry[ident] != name:
+                    problems.append(
+                        f"{where}: pairs {ident} with {name!r}, but the registry defines it as "
+                        f"{registry[ident]!r}"
+                    )
+
+    if registry:
+        for f in files:
+            if f.suffix != ".md":
+                continue
+            rel = str(f)
+            if rel.endswith("docs/architecture/INVARIANTS.md"):
+                continue
+            text = (ROOT / f).read_text(encoding="utf-8", errors="replace")
+            lines = text.splitlines()
+            for ident, name in set(cited_invariants(text)):
+                name = name.strip()
+                if ident not in registry:
+                    # A document may *propose* an invariant, but it has to say so on the same line it
+                    # cites the undefined ID. A document-wide exemption would let one stray
+                    # "(PRD-only)" anywhere license every undefined ID in the file.
+                    line_flags = any(
+                        ident in l and ("PRD-only" in l or "no canonical invariant" in l)
+                        for l in lines
+                    )
+                    if line_flags:
+                        continue
+                    problems.append(
+                        f"{rel}: cites {ident}, which docs/architecture/INVARIANTS.md does not define"
+                    )
+                elif registry[ident] != name:
+                    hits = [i for i, l in enumerate(lines, 1) if ident in l and name in l]
+                    where = f"{rel}:{hits[0]}" if hits else rel
+                    problems.append(
+                        f"{where}: pairs {ident} with {name!r}, but the registry defines it as "
+                        f"{registry[ident]!r} -- two documents using one ID for two rules is how an "
+                        "implementer ships the wrong check while every gate stays green"
+                    )
+
+    # Rule: PLANNED is checked in both directions, so it cannot rot into a hidey-hole.
+    for token, why in PLANNED.items():
+        if resolves(token):
+            problems.append(
+                f"PLANNED entry `{token}` now exists in the tree ({why}) -- drop the entry"
+            )
+
+    # Rule 4a: the api specs keep their banner.
+    api = ROOT / "docs" / "api"
+    if api.is_dir():
+        for spec in sorted(api.glob("*.md")):
+            head = "\n".join(spec.read_text(encoding="utf-8", errors="replace").splitlines()[:12])
+            if "STATUS:" not in head or "NOT IMPLEMENTED" not in head:
+                problems.append(
+                    f"{spec.relative_to(ROOT)}: a spec for surface that is not built must state "
+                    "`STATUS: ... NOT IMPLEMENTED` in its first 12 lines"
+                )
+
+    # Rules 4b and 4c: the headline capability claim is read from source, not from prose, and it is
+    # checked in both directions for the two files people act on -- README.md (what a human reads first)
+    # and AGENTS.md (what an agent reads *instead of* checking). A stale README misinforms a reader; a
+    # stale AGENTS.md gets implemented, which is why this file is bound to the constant rather than
+    # trusted to remember it. Both directions matter: the old version of this rule only failed when the
+    # constant was flipped under a document that still said false, so an AGENTS.md that simply omitted
+    # the claim -- leaving "Voice Packs Created: tara.cvpack" as the loudest sentence in the file --
+    # passed, and passing by silence is the failure mode this whole script was written against.
+    lib = ROOT / "crates" / "vocal-core" / "src" / "lib.rs"
+    flag = None
+    if lib.is_file():
+        m = re.search(
+            r"REAL_SYNTHESIS_AVAILABLE[^=]*=\s*(?::\s*\w+\s*)?(:?\s*)?(true|false)",
+            lib.read_text(encoding="utf-8"),
+        )
+        flag = m.group(2) if m else None
+    MARKER = "REAL_SYNTHESIS_AVAILABLE` is `false"
+    for doc in (ROOT / "README.md", ROOT / "AGENTS.md"):
+        if flag is None or not doc.is_file():
+            continue
+        says_false = MARKER in doc.read_text(encoding="utf-8")
+        if flag == "false" and not says_false:
+            problems.append(
+                f"{doc.name}: must carry the line `REAL_SYNTHESIS_AVAILABLE` is `false` (or the "
+                "placeholder-model sentence that replaces it) while crates/vocal-core/src/lib.rs says so. "
+                "Omitting the claim is not neutrality -- a reader fills the gap with the rest of the file."
+            )
+        if flag == "true" and says_false:
+            problems.append(
+                f"{doc.name} says REAL_SYNTHESIS_AVAILABLE is false, but crates/vocal-core/src/lib.rs "
+                "sets it true -- update the claim in the same commit that flips the constant"
+            )
+
+    # Rule 6: a root-level document whose *filename* asserts completion must be answered by a status
+    # banner in its first 12 lines. PHASE1_COMPLETE.md is why: it stood for a full sprint with a title
+    # that everybody repeated and a body that had never been run. The rule is about the name, not the
+    # body, because a corrected document is allowed to keep its falsified claims as history -- that is
+    # what the correction table is for, and rewriting history is its own way of losing the lesson.
+    for doc in sorted(ROOT.glob("[A-Z]*.md")):
+        if not re.search(r"COMPLETE|DONE|SHIPPED|PASSED|FINISHED|SUCCESS", doc.name, re.I):
+            continue
+        head = "\n".join(doc.read_text(encoding="utf-8").splitlines()[:12])
+        if not re.search(r"CORRECTION|STATUS:|NOT IMPLEMENTED|\u26a0\ufe0f", head):
+            problems.append(
+                f"{doc.name}: a filename that asserts completion must be answered in its first 12 lines "
+                "by a `CORRECTION` / `STATUS:` banner naming what is actually true"
+            )
+
+    if problems:
+        print(f"verify-doc-claims: {len(problems)} stale or unverifiable claim(s)\n", file=sys.stderr)
+        for p in problems:
+            print(f"  {p}", file=sys.stderr)
+        return 1
+    print("verify-doc-claims: every documented path claim resolves, and the checked claims match source")
+    return 0
+
+
+def self_test() -> int:
+    """Prove the gate can fail. This script's own history is the reason the flag exists: a rewritten
+    version of it lost its file loop and reported a clean tree in under a second, which is the exact
+    defect it is supposed to catch -- every other check in this repository has died the same way (a
+    grep whose target path had been renamed, an `echo` standing in for an assertion, a wrapper whose
+    body was deleted). So the gate ships with a canary: a planted false claim must fail, the same claim
+    written honestly must pass, and a stale PLANNED entry must fail. Run it in CI before the real scan."""
+    import shutil
+    import subprocess
+    import tempfile
+
+    here = Path(__file__).resolve()
+    planted_bad = (
+        "# Notes\n\n- The audit runs `scripts/totally-made-up.sh` on every commit and blocks the build.\n"
+    )
+    planted_good = (
+        "# Notes\n\n- The audit used to run `scripts/totally-made-up.sh`; that script was deleted and\n"
+        "  no longer exists, so the check is the CI job itself.\n"
+    )
+    # A 12-entry registry, because this script requires the real one to be complete: a canary run
+    # against a deliberately short stub would fail on the size check and prove nothing.
+    stub_ids = ["Offline Independence", "LLM Independence", "Provider Independence",
+                "Persona Independence", "Deterministic Core", "Graceful Degradation", "Local Privacy",
+                "Voice Provenance", "Interruptibility", "Streaming Safety", "Resource Limits",
+                "Version Compatibility"]
+    stub_body = "# Invariants\n\n" + "\n".join(
+        f"### VOICE_INV_{n:03d} — {name}\n\n| **ID** | VOICE_INV_{n:03d} |\n"
+        f"| **Name** | {name} |\n" for n, name in enumerate(stub_ids, 1)
+    )
+    registry_stub = {"docs/architecture/INVARIANTS.md": stub_body}
+    cases = [
+        ("planted false claim is caught", {**registry_stub, "docs/notes.md": planted_bad}, 1),
+        ("honest past-tense citation is allowed", {**registry_stub, "docs/notes.md": planted_good}, 0),
+        (
+            "an ID paired with a foreign name is caught",
+            {**registry_stub, "docs/notes.md": "# Notes\n\n- `VOICE_INV_001` — Loopback Only\n"},
+            1,
+        ),
+        (
+            "an ID paired with its registry name is allowed",
+            {**registry_stub, "docs/notes.md": "# Notes\n\n- `VOICE_INV_001` — Offline Independence\n"},
+            0,
+        ),
+        (
+            "stale PLANNED entry is caught",
+            {"docs/notes.md": "# Notes\n", "tests/offline_test.rs": "// now it exists\n"},
+            1,
+        ),
+        (
+            "an agent-facing doc that omits the capability flag is caught",
+            {
+                **registry_stub,
+                "crates/vocal-core/src/lib.rs": "pub const REAL_SYNTHESIS_AVAILABLE: bool = false;\n",
+                "AGENTS.md": "# Guide\n\n- Voice packs created: tara.cvpack\n",
+            },
+            1,
+        ),
+        (
+            "an agent-facing doc that states the flag honestly is allowed",
+            {
+                **registry_stub,
+                "crates/vocal-core/src/lib.rs": "pub const REAL_SYNTHESIS_AVAILABLE: bool = false;\n",
+                "AGENTS.md": "# Guide\n\n- `REAL_SYNTHESIS_AVAILABLE` is `false`, so nothing can speak.\n",
+            },
+            0,
+        ),
+        (
+            "a root file named COMPLETE with no status banner is caught",
+            {**registry_stub, "PHASE2_COMPLETE.md": "# Phase 2 done\n\nAll tests pass.\n"},
+            1,
+        ),
+    ]
+    failures = 0
+    for name, tree, want in cases:
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "scripts").mkdir(parents=True)
+            shutil.copy(here, root / "scripts" / here.name)
+            for rel, body in tree.items():
+                dst = root / rel
+                dst.parent.mkdir(parents=True, exist_ok=True)
+                dst.write_text(body, encoding="utf-8")
+            got = subprocess.run(
+                [sys.executable, str(root / "scripts" / here.name)],
+                capture_output=True, text=True,
+            ).returncode
+        if got == want:
+            print(f"  self-test ok: {name}")
+        else:
+            failures += 1
+            print(f"  SELF-TEST FAILED: {name}: expected exit {want}, got {got}", file=sys.stderr)
+    if failures:
+        print(
+            "::error::verify-doc-claims.py cannot distinguish a true claim from a false one; "
+            "do not trust its other output", file=sys.stderr,
+        )
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    if "--self-test" in sys.argv:
+        sys.exit(self_test())
+    sys.exit(main())

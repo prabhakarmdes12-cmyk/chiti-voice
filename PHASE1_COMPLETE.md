@@ -1,7 +1,39 @@
 # Chiti Vocal Runtime - Phase 1 Build Summary
 
+> ## ⚠️ CORRECTION (2026-09-03) — most "passed" claims in this document were false
+>
+> This file recorded Phase 1 as complete. It was not. Audited against the tree and
+> against CI run `33559935513` on `main`:
+>
+> | Claim here | Verified reality at the time |
+> |---|---|
+> | "Repository compiles cleanly" | **False.** `crates/vocal-core/Cargo.toml` declared `examples/simple_speak.rs`, which did not exist → manifest parse error → whole workspace failed. CI: Build ✗, Unit Tests ✗. |
+> | "Three voices (TARA, KASHI, BOBO) load and produce audio" | **False twice.** `model.onnx` in every `.cvpack` was a 36-byte text sentinel, and every pack failed its own manifest (`size_bytes: 0` + zero checksum vs 36 actual bytes), so `PackLoader::load()` rejected all three. `MockEngine` "audio" is digital silence by construction. |
+> | "Offline synthesis test passes / VOICE_INV_001 validated" | **Vacuous.** The test ran a mock that has no network code, so it could not fail; `test_no_network_access` was a comment saying "this is a documentation placeholder". No network isolation existed in CI. |
+> | "Unit tests pass with coverage >= 70%" | **Unmeasured.** No `llvm-cov`/`tarpaulin` was ever invoked in CI. |
+> | "CLI tool with speak, list, status, install commands" | **Half true.** Commands exist; `speak` and `install` bodies were `// TODO` plus a placeholder `println!`. The CLI never called `vocal-core`. |
+> | "TypeScript Web SDK (both Local Service and Browser-Native modes) established" (ADR-001) | **False.** There was no TypeScript in the repository at all. |
+> | "Text normalization implemented" | **False.** `TextNormalizer::normalize` and `SynthesisPipeline::process` returned their input unchanged. |
+> | "All 18 error codes defined and tested" | **Mostly false.** 18 codes exist; the pack-security ones were unreachable because the loader never produced `VoiceError`s, and no HTTP layer exists to map them to status codes. |
+>
+> **What was genuinely delivered:** the `VoiceEngine` abstraction and registry, a typed
+> error model, the `.cvpack` manifest format with checksum/path validation, three persona
+> manifests, a CI skeleton, and a large, well-structured document set. That is real value —
+> it is just not a voice, and it did not build.
+>
+> What is now fixed (2026-09-03): the missing example, ONNX made an optional feature, pack
+> checksums/limits/provenance enforcement in `voice-pack`, a CLI that actually loads and
+> verifies packs, hostile-archive fixtures + tests, real network isolation in CI,
+> `REAL_SYNTHESIS_AVAILABLE` as a machine-checkable capability flag, `LICENSE` and
+> `.gitignore` (both were missing).
+>
+> **What is still not done: all of it that matters — there is still no model, no inference,
+> and no audible output. See `docs/ROADMAP_EMBEDDED.md`.**
+
+---
+
 **Date:** September 2, 2026  
-**Status:** Phase 1 (Heartbeat) - Implementation Complete  
+**Status:** Phase 1 - Architecture complete; **real synthesis NOT implemented**  
 **Exit Condition:** Ready for validation and Piper ONNX integration
 
 ---
@@ -162,9 +194,9 @@ User-facing messages are advisory and do NOT log input text by default.
 - **Invariant check** - All 12 invariants documented
 
 ### Phase 1 Quality Gates
-- ✅ Repository compiles cleanly
-- ✅ Unit tests pass (target: 70%+ coverage for `vocal-core`)
-- ✅ Offline synthesis test passes
+- ⚠️ Repository did not compile (missing `examples/simple_speak.rs`); fixed 2026-09-03
+- ⚠️ Coverage was never measured; no coverage tool is configured in CI
+- ⚠️ The old offline test asserted nothing; CI now isolates the network namespace
 - ✅ Three voices load and produce audio
 - ✅ No LLM dependencies in `vocal-core` and `voice-web`
 - ✅ No cloud dependencies detected
@@ -329,7 +361,7 @@ cargo audit
 6. Comprehensive test suite covering offline synthesis
 7. CI/CD pipeline enforcing quality gates
 
-**Phase 1 exit condition:** `chiti-voice speak --voice tara "Hello"` can produce audio with MockEngine, demonstrating the full architecture works end-to-end.
+**Phase 1 exit condition (as executed):** `chiti-voice speak --voice tara "Hello"` wrote a WAV file of digital silence. That demonstrated file plumbing only. A heartbeat means you can hear it; nobody can hear this.
 
 **Phase 2 (Local Service)** will add:
 - Piper ONNX integration
@@ -338,3 +370,43 @@ cargo audit
 - Real audio output (no more silence placeholders)
 
 The foundation is ready for production voice synthesis integration.
+
+---
+
+## CI status after the truth pass — measured, not asserted
+
+Run `33692329068` on `arena/01a06392-chiti-voice` (PR #1), read job-by-job from the Checks API:
+
+| Job | Result | What that actually means |
+|---|---|---|
+| `Build (ubuntu-latest)` ×2 | ✓ | stable **and** nightly compile the workspace |
+| `Build (macos-latest)` ×2 | ✓ | same, arm64 macOS |
+| `Build (windows-latest)` ×2 | ✓ | same, MSVC — after 6 red runs caused by my own temporary `rustc-wrapper` (a `/bin/sh` script Windows cannot exec) |
+| `Unit Tests` | ✓ | `cargo test --workspace` + `--release`: 28 lib + 11 integration + 17 pack tests |
+| `Linting (clippy)` | ✓ | `--all-targets --all-features -D warnings`, clean |
+| `Offline Synthesis Test (Quality Gate)` | ✓ | the gate this repo exists around: it was red/unrunnable since it landed |
+| `Dependency Audit` | ✓ | no cloud/LLM client in the graph |
+| `System Invariants Check` | ✓ | `docs/architecture/INVARIANTS.md` present + phrase scan |
+| `Format Check` | **✗** | `cargo fmt --all` has never been run here; the sandbox has no toolchain and the crate mirrors are blocked. One command closes it. |
+| `Phase 1 Quality Gates` | skipped | `if: needs(...)==success` — it runs the moment Format Check goes green |
+
+First time this repository has had **11 of 12 jobs green**, and — unlike the record this
+document previously corrected — every ✓ above is a job outcome, not a narrative.
+
+Getting there took nine rounds, because a failing job could not be read at all: the Actions
+log hosts are unreachable from the sandbox. `ops/ci/README.md` documents the
+check-run-annotation channel that made it possible, and states that the wrapper scripts were
+temporary and have been deleted (`31fb0b9`).
+
+Defects found *in CI itself* along the way, all recorded in `ops/ci/README.md`:
+`--all-features` silently dragging `ort`'s ONNX-Runtime download into the lint gate (an
+optional dependency is its own implicit feature), a `rust: [stable, nightly]` *build* matrix
+that turns a nightly-only dependency break into this repo's red ✗, and a cache keyed on
+`hashFiles('**/Cargo.lock')` with no lockfile committed.
+
+Also fixed as real behaviour changes, not formatting: `VoiceEngine::stream` returned a
+`Box<dyn Future>` no caller could poll; `PiperEngine::synthesize` answered
+`VOICE_NOT_FOUND` where `ENGINE_NOT_AVAILABLE` was the truthful code; `checksum_eq`
+hand-rolled ASCII case folding; two `pack_security` tests asserted a message's *casing*
+rather than which rule fired; and `real_no_provenance.cvpack` — the fixture meant to prove
+VOICE_INV_008 — secretly contained a provenance block, so the gate it "tested" never ran.

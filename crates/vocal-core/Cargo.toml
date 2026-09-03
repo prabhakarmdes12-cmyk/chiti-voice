@@ -4,6 +4,29 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 license.workspace = true
+description = "Provider-agnostic offline voice synthesis runtime (engine abstraction, persona runtime, pipeline)"
+
+[features]
+default = []
+
+# Real ONNX-backed synthesis. Off by default ON PURPOSE:
+#   * `ort`'s build script downloads prebuilt ONNX Runtime binaries at build time,
+#     which would break air-gapped/offline builds and slow every CI job and every
+#     contributor who only needs the trait + pack plumbing.
+#   * Cross-compiling ONNX Runtime onto embedded targets (armv7/aarch64/riscv) is
+#     its own problem and should not be forced on the base crate.
+# See docs/ROADMAP_EMBEDDED.md before enabling this in a release build for a device.
+#
+# It is intentionally EMPTY right now, and that is a real constraint rather than a
+# shortcut: no code in this crate references ort/ndarray yet, and the project's lint job
+# runs `cargo clippy --all-targets --all-features`, so a feature that pulls `ort` with
+# its default features makes every lint/offline job run ONNX Runtime's *download*
+# build script. An air-gapped project must not need a network just to lint.
+# Step 1 of docs/ROADMAP_EMBEDDED.md switches this to
+# piper = ["dep:ort", "dep:ndarray"] in the same commit that adds the inference code,
+# together with ort = { default-features = false, features = ["load-dynamic"] } (or a
+# vendored ONNX Runtime) so the download never becomes a build requirement.
+piper = []
 
 [dependencies]
 tokio.workspace = true
@@ -11,16 +34,27 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
-anyhow.workspace = true
-ndarray.workspace = true
-ort.workspace = true
-sha2.workspace = true
 hex.workspace = true
 async-trait.workspace = true
 voice-pack = { path = "../voice-pack" }
 
+# ONNX dependencies are NOT declared here on purpose, and this is load-bearing rather
+# than tidiness: an optional dependency implicitly becomes a feature of the same name, so
+# `--all-features` enables it whether or not `piper` exists. The lint job runs
+# `cargo clippy --all-targets --all-features -- -D warnings`, which would then build `ort`,
+# whose default features run a build script that DOWNLOADS prebuilt ONNX Runtime — a network
+# fetch inside the "offline" project's lint gate, and a failure that never reaches our code
+# (the job died inside a dependency, so it reported zero diagnostics for this workspace).
+# Both are declared in [workspace.dependencies] as the plan's anchor; Step 1 of
+# docs/ROADMAP_EMBEDDED.md adds them here together with the inference code, in the same
+# commit that also changes the lint invocation to stop using --all-features (or vendors
+# ONNX Runtime / sets ort = { default-features = false, features = ["load-dynamic"] }).
+
 [dev-dependencies]
-mockito.workspace = true
+serde_json.workspace = true # kokoro_reference.rs reads tests/fixtures/kokoro/reference.json
+# NOTE: no HTTP-mocking library here on purpose. vocal-core must not gain a network
+# client even for tests; `mockito` was declared but never used and was removed.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 
 [[example]]
 name = "simple_speak"

@@ -1,0 +1,695 @@
+# Roadmap Revision — Real Voice, Offline, On Device
+
+Classification: PLAN (supersedes the phase order in `PRD.md` for the goals below)
+Date: 2026-09-03
+Owner decision required: backend selection (`ADR-001` is still `PROPOSED`)
+
+---
+
+## 0. The constraints this plan is built against
+
+Stated goals for Chiti Vocal Runtime:
+
+1. **A voice you can connect to your own projects** — a callable surface (library, daemon,
+   SDK), not a demo.
+2. **Very good voice quality.**
+3. **Runs on any device**, with **offline mandatory** (no network call in the synthesis
+   path, ever — `VOICE_INV_001`).
+4. **Embedded targets**: Raspberry Pi-class, robot, toy.
+
+These four cannot all be maximized. Not because of this codebase, but because of
+arithmetic. The rest of this document is about choosing which constraint to bend, per
+device tier, and getting to *audible* as fast as possible.
+
+**Nothing in this repository currently produces sound.** `MockEngine` emits silence,
+`PiperEngine` is a voice registry with a `TODO`, no `.cvpack` contains a model, and
+`vocal_core::REAL_SYNTHESIS_AVAILABLE == false`. Treat everything below as "the work that
+has to happen", not "the work that mostly happened".
+
+---
+
+## 1. The numbers that decide the design
+
+Third-party on-device benchmark (Picovoice, 2026 — desktop CPU, single core; measure on
+your real hardware before committing, but the relative ordering is what matters)
+[2](https://picovoice.ai/blog/on-device-tts/):
+
+| Engine | Model size | Peak memory | Time to first sample | Streaming out | License |
+|---|---|---|---|---|---|
+| Piper TTS | 61 MB | 2.6 GB | 1,720 ms | yes | MIT (engine), **per-voice** (models) |
+| Kokoro-82M | 341 MB | 2.0 GB | 3,658 ms | yes | Apache-2.0 |
+| Kyutai Pocket TTS | 242 MB | 610 MB | 1,713 ms | yes | MIT |
+| KittenTTS Nano (int8) | 42 MB | 320 MB | **10,483 ms** | **no** | Apache-2.0 (see §3) |
+| Picovoice Orca | 7 MB | 41 MB | 106 ms | yes | **proprietary/commercial** |
+
+### Measured in this repo, not quoted (2026-09-03)
+
+[`docs/research/KOKORO_OFFLINE_SPIKE.md`](./research/KOKORO_OFFLINE_SPIKE.md) synthesised real speech
+with the actual graph, in the sandbox, from weights pulled off npm because Hugging Face is
+blocked here. Against a model *in this family* (int8 Kokoro-82M, 88.1 MiB, vocoder fused into
+the graph, 24 kHz mono):
+
+| Item | Measured | Against the table above |
+|---|---|---|
+| Model size | 88.1 MiB (int8 export) | the blog's 341 MB is the fp32 Kokoro export — quantisation is ~4×, and it is *free* to adopt |
+| Peak RSS | 284 MiB (Python, one thread) / 334 MiB (with the G2P model too) | "2.0 GB" is the fp32 Python story; a Rust/`ort` build should be nearer the model size, but that number is still unmeasured on a board |
+| RTF, 1 thread, nproc=2 | 1.79 (en) · 1.86 (en, permissive G2P) · 2.35 (hi) | >1 ⇒ **not** real-time on a single modest core; sentence-at-a-time, not stream-and-play |
+| Session load | 0.57–0.75 s | matters for a robot that boots cold |
+| Graph contract | `input_ids` i64[1,L] + `style` f32[1,256] + `speed` f32[1] → `waveform` f32[1,N] | **no separate vocoder session** — Step 1's two-session plan collapses to one for this export |
+| Voice asset | 522,240 B = 510 × 256 f32 per speaker | a *persona* is 0.5 MB; the model is shared. See §5 |
+| Output level varies by voice | peak 0.50 (af_heart) → 0.99 (hf_alpha), same graph | a device player needs loudness normalisation; 0.99 is one hot voice from clipping |
+
+Two of those change the design immediately: the fused vocoder (less to port) and the per-voice
+peak spread (a required post-stage, not an optional one).
+
+Quality context from the same survey of public comparisons
+[5](https://www.promptquorum.com/power-local-llm/local-tts-voice-cloning-piper-coqui-xtts),
+[2](https://picovoice.ai/blog/on-device-tts/):
+
+| Model | Approx. naturalness (MOS, English) | Note |
+|---|---|---|
+| Human reference | ~4.5 | ceiling |
+| Kokoro-82M | ~4.0–4.2 | "very good per parameter", big |
+| Piper VITS | ~3.5 | "good", intelligible, flat, tiny-ish |
+| KittenTTS | small-but-surprisingly-natural for its size | English-focused, no streaming |
+| Neu-TTS-Nano / XTTS-v2 / F5-TTS | varies | XTTS v2 (CPML) and F5-TTS (CC-BY-NC-4.0) are **non-commercial** — unusable for you |
+
+Read those two tables together and the design conclusions are forced:
+
+- **"Very good" and "20 MB, fully offline, on a toy" is not currently available for free
+  from anyone.** The 20 MB target in `docs/research/20MB_CHALLENGE.md` with MOS > 4.0 is a
+  research program (quantization, distillation, shared backbone + speaker adapters), not a
+  phase. It is a 2027-sized goal, not a 2026-sized one.
+- **Real-time interactive voice needs streaming synthesis.** Kitten Nano's 10 s time-to-first-sample
+  and no-streaming behaviour makes it fine for "read this notification" and wrong for
+  "conversation with a robot". That is a product-fit decision, not a quality one.
+- **Peak memory is the real embedded constraint, not model size.** Piper's 61 MB model
+  wanting 2.6 GB peak (because of ONNX Runtime arenas + espeak-ng data + phoneme caches) is
+  the single most important number in this table for a Pi Zero/toy target. It must be
+  measured and *configured*, not assumed.
+- **A Raspberry Pi 4/5 (2–4 GB) can run this. A microcontroller (ESP32-S3 class) cannot run
+  any of these models.** For an ESP32-class toy, the honest architecture is: pre-generated
+  clips + concatenative/unit-selection playback for a fixed phrase set, or a small
+  vocoder-driven approach, with neural TTS on a companion device (phone/Pi/edge box). If a
+  battery toy must speak arbitrary text offline, that is the actual research project here.
+
+### Recommended target tiers
+
+| Tier | Hardware | Engine choice | Quality | Why |
+|---|---|---|---|---|
+| **T0 (ship first)** | Desktop/server, Pi 4/5 (2 GB+) | **Piper** (VITS, 22k/medium) | ~3.5, intelligible | MIT engine, tiny models, streams, espeak-ng path proven on Pi; the fastest route to *audible* |
+| **T1 (quality)** | 4 GB+ RAM, modern CPU | **Kokoro** or **Pocket TTS** | ~4.0+ | Apache/MIT, much better prosody; Kokoro too heavy for small boards |
+| **T2 (clone/persona)** | Same as T1 | **Pocket TTS voice cloning** from a short reference | inherits model | MIT, 242 MB, ~5 s reference → the cheapest legitimate route to "our own voice" without training a model from scratch |
+| **T3 (toy/MCU)** | ESP32-S3 etc. | **No neural TTS.** Clip set + concatenative, or delegate to a paired device | n/a | Do not promise offline arbitrary-text speech here |
+
+`ADR-001` recommends Piper; that recommendation still holds **for T0**, and should be
+accepted with the licensing conditions in §3 written into it.
+
+---
+
+## 2. Re-sequenced plan (each step has a binary exit test)
+
+The PRD ordered this as *backend → daemon → SDK → size research*. For your goals the
+ordering above buries the two hardest things (audible quality, device fit) behind a year of
+surface area. Re-sequence:
+
+**Step 0 — truth + build (done 2026-09-03, this commit).**
+Compilable workspace, honest docs, `REAL_SYNTHESIS_AVAILABLE`, enforced pack limits,
+`docs-truth` CI gate. Exit: `cargo build --workspace --all-targets` green; CI green.
+
+**Step 1 — ONE real sentence of audio (days, not quarters).**
+*Status 2026-09-03 (later the same day): the deterministic half has landed. Everything the engine
+must do around the graph is now Rust and CI-tested — `style_matrix.rs` (510×256 LE decode, the
+row-index rule, exact-size rejection), `audio_levels.rs` (floor conversion + loudness with a peak
+ceiling and a max-gain cap), and `tests/dsp_parity.rs`, which grades both rules against
+`tests/fixtures/kokoro/dsp_parity.json`: the raw float32 output of the very run that produced
+`assets/offline-spike/af_heart-en_us.wav`, so passing means the crate reproduces committed reference
+audio sample-for-sample with no tolerance anywhere. That also fixed a live bug: `wav.rs` scaled with
+`.round()` where the reference floors, i.e. the "already implemented and tested" item 4 below was
+**not** bit-compatible with our own evidence. What remains is the `ort` session call itself, which
+needs a machine with crates.io; CI compiles them under `--all-features` and *runs* them: `Unit Tests` on
+all three OSes is green at `56f13b3`, with the parity assertions among them. One test failed on the
+first push and it was my hand-written expectation, not the rule (`-1.0` floors to -32767, so the
+bottom int16 rail is unreachable from in-range audio) — which is what grading against data is for.*
+Accept `ADR-001` (Piper for T0). Then, in `PiperEngine` behind `--features piper`:
+1. `ort::Environment` + `Session` load from bytes already in the `.cvpack` (never a path
+   fetch — `fetch-models` stays off; it is now removed from the workspace manifest).
+2. Piper's input contract: phoneme ID sequence + speaker ID + length/scale/noise tensors →
+   mel → **vocoder** session → PCM. Two sessions (acoustic + vocoder) or one fused export;
+   decide and record it in an ADR.
+3. Phonemization: see §3. This is the hard part, not the ONNX part.
+4. Write PCM through `vocal_core::wav` (already implemented and tested).
+- **Exit test:** a CI job runs `chiti-voice speak --voice tara "Hello" --engine piper` on a
+  *real* model and asserts (a) exit 0, (b) PCM RMS > threshold, (c) duration within ±20% of
+  expected. Then flip `REAL_SYNTHESIS_AVAILABLE = true`. `docs-truth` then *requires* the
+  docs to stop saying "No audible voice" — the flag keeps prose and code locked together.
+- Also add: `cargo test --benches` RTF measurement vs. wall-clock playback length.
+
+**Step 2 — device fit, before any API surface.**
+On the actual hardware: RSS, time-to-first-sample, RTF, cold-start model load, pack size.
+Then set `PackLimits` per tier from measurements (the `embedded()`/`tiny()` profiles exist
+now and are guesses to be replaced by data). Decide the memory story for ONNX Runtime
+arenas, and whether `mmap` loading of `model.onnx` is acceptable (it changes the pack format:
+external-data files must then be declared in the manifest, which the allowlist already supports).
+- **Exit test:** published table of measured numbers per device; a documented `MIN_HW` and a
+  startup budget (< 300 ms warm, < 2 s cold is a reasonable target to argue about).
+
+**Step 3 — the surface you actually wanted: daemon + SDK.**
+`vocal-local` Axum daemon on `127.0.0.1:7731` implementing `docs/api/HTTP_API.md`
+(`/v1/speak`, `/v1/health`, `/v1/stop`), chunked PCM streaming, cancellation within 100 ms
+(FR-025/034), and `@chiti/voice-web` on top. This is where "connect it to my projects"
+becomes true. Keep `SynthesisResponse` as the wire contract so the CLI and daemon share one
+engine path.
+- **Exit test:** a browser page and a Node script speak the same sentence with the network
+  disconnected (DevTools offline + no outbound route), and `stop()` silences in < 100 ms.
+
+**Step 4 — the two invariants that make it a product, not a toy library.**
+- Text normalization for Indian English and Hindi (₹ lakh/crore, DD/MM/YYYY, phone numbers,
+  "Dr./Shri./IAS/ISRO", numerals → words). This is where TTS products actually fail, and it
+  is currently a `Ok(text.to_string())` stub. Own it deliberately (a small rule engine + a
+  pronunciation dictionary), not as Phase 6 filler.
+- Provenance/licensing gate per pack (already started: the builder refuses to emit a
+  non-placeholder pack with incomplete provenance, and CI checks it).
+
+**Step 5 — persona runtime wiring, then quality research.**
+Intent → prosody applied by the engine, not just parsed — and the manifest now says only what can be
+applied: `rate` goes to the graph's `speed` input, `energy` becomes a dBFS offset on the loudness
+stage, `pause_factor` becomes inserted silence, and `pitch` is realised by **cast selection** (a pack
+must set `pitch_baked_into_style` or the value is rejected at load). `warmth`/`expressiveness` stay out
+of the manifest entirely; they are documented, not dialled (§6).
+Then, and only then, the `20MB_CHALLENGE` research track (quantization/distillation, shared
+backbone + adapters), and the browser-native WASM/WebGPU question — which is a *separate
+engineering problem* (§4), not a later phase of this one.
+
+Steps 1–2 are where the product either exists or doesn't. Everything after that is surface.
+
+---
+
+### Resolved 2026-09-03 (invariants): three claims, checked or honestly retired
+
+`VOICE_INV_005` (Deterministic Core) is now tested by `crates/vocal-core/tests/determinism_test.rs`:
+ten renders of one sentence compared byte-for-byte and on reported metadata, a second engine instance
+(a single-instance loop cannot see state captured at `initialize()`), repeated `encode`/`plan_pieces`
+compared on tokens, units and style rows, and a scan of the shipped half of each deterministic module for
+a clock, an RNG or a pid. `VOICE_INV_012` (Version Compatibility) was the weaker contract and is now the
+documented one: `SUPPORTED_SCHEMA_VERSION` replaces a literal that appeared in four places, the rejection
+names both the declared and the accepted version, and `wrong_schema_version_is_rejected` pins it. Exact
+match rather than a `semver` range is a decision with a reason -- the invariant claimed a `semver` crate
+that was never in `Cargo.toml`.
+
+Three things the invariant documents asserted and this tree does not do are now written as absences
+rather than left to inference: the request half of `VOICE_INV_011` (no `VocalClient`, no `queue.rs`, no
+`TextTooLongError`, no `QueueFullError`), the `Float32Array` golden and NANO/LITE/STUDIO tier runs under
+`VOICE_INV_005`, and the TypeScript type-surface snapshot under `VOICE_INV_012`. One narrower gap is
+recorded where it will be read: the PRD-only "No Executable Content" rule is enforced by *extension*, so
+an extensionless ELF inside a pack still loads. Fixing that means reading ZIP mode bits or sniffing
+magic bytes -- both are loader changes, and neither belongs in a documentation pass.
+
+### Resolved 2026-09-03 (docs): one ID, two rules
+
+`PRD.md`'s invariant table and `docs/architecture/INVARIANTS.md` assigned the same identifiers to
+different requirements from `VOICE_INV_003` onward. `VOICE_INV_008` was "Loopback Only" in the PRD and
+"Voice Provenance" in the architecture doc -- and the architecture doc is what the code cites:
+`crates/voice-pack/src/security.rs` rejects an unprovenanced pack *because of* `VOICE_INV_008`. An
+implementer working from the PRD would have added a socket-binding check and considered the provenance
+requirement unaddressed, while every gate stayed green, because no tool checked that an ID meant one
+thing. The table now carries the canonical IDs, renames the one drifted label (`Offline Synthesis` ->
+`Offline Independence`), and marks nine requirements **PRD-only** rather than re-using an ID for them;
+`INVARIANTS.md` records those nine so they stay visible, including `RTF Bound`, the only PRD exit
+criterion with neither an implementation nor a measurement on reference hardware. `verify-doc-claims.py`
+now parses the registry from `INVARIANTS.md`, requires its headings and its table to agree, and fails
+any markdown file or Rust doc comment that pairs an ID with a foreign name or cites an undefined ID --
+with two canaries in `--self-test` so the rule itself cannot go quiet.
+
+### Resolved 2026-09-03 (docs): claims that nothing checked
+
+`docs/architecture/INVARIANTS.md` documented enforcement that does not exist: a dependency-audit
+script (`scripts/audit-llm-deps.sh`) and an API-surface script (`scripts/check-api-surface.ts`) that
+were never written, a static-analysis grep pointed at `crates/chiti-vocal-core/src/` -- a directory
+that has not existed under that name since the crates were renamed, so the documented check would
+return zero matches on any tree and pass forever -- and two files (`pack/verify.rs`,
+`persona/resolver.rs`) whose real counterparts are `crates/voice-pack/src/security.rs` and
+`crates/vocal-core/src/persona.rs`. Every one of those is now described as it is: `security.rs`'s
+`validate_files` with its `without_provenance_check()` caveat named, the CI job's actual grep and its
+actual limit (manifests, not the transitive graph), and the two absent scripts recorded as absent.
+
+`docs/LICENSES_THIRD_PARTY.md` is new, because `PRD.md` required the catalogue and shipping derived
+persona voices depends on it. It says plainly that the Kokoro carrier's MIT licence covers its code
+and not its model data, so blends remain unshippable.
+
+`scripts/verify-doc-claims.py` is the gate. It resolves backticked paths per-file (crate-relative
+shorthand allowed), treats a *paragraph* -- not a line -- as the unit of "this document says the thing
+is absent", fails when a documented grep or test targets a path that does not exist, checks both
+directions of its `PLANNED` allowlist, requires `docs/api/*.md` to keep their `STATUS: NOT IMPLEMENTED`
+banner, and cross-checks the README's headline claim against `REAL_SYNTHESIS_AVAILABLE` in source. It
+starts with `--self-test`, which plants a false claim in a temp tree and demands the script catch it:
+the first version of this checker lost its file loop in an edit and reported a clean tree in under a
+second, so a gate that cannot fail is not trusted here. **Limit, stated rather than discovered:** the
+steps live in `ops/ci/ci-phase1.yml`, the successor workflow, so the gate runs once that is installed
+with `scripts/install-ci.sh`; the live `.github/workflows/ci-phase1.yml` cannot be edited from this
+environment, and its docs checks are narrower than these.
+# Roadmap Revision — Real Voice, Offline, On Device
+
+Classification: PLAN (supersedes the phase order in `PRD.md` for the goals below)
+Date: 2026-09-03
+Owner decision required: backend selection (`ADR-001` is still `PROPOSED`)
+
+---
+
+## 0. The constraints this plan is built against
+
+Stated goals for Chiti Vocal Runtime:
+
+1. **A voice you can connect to your own projects** — a callable surface (library, daemon,
+   SDK), not a demo.
+2. **Very good voice quality.**
+3. **Runs on any device**, with **offline mandatory** (no network call in the synthesis
+   path, ever — `VOICE_INV_001`).
+4. **Embedded targets**: Raspberry Pi-class, robot, toy.
+
+These four cannot all be maximized. Not because of this codebase, but because of
+arithmetic. The rest of this document is about choosing which constraint to bend, per
+device tier, and getting to *audible* as fast as possible.
+
+**Nothing in this repository currently produces sound.** `MockEngine` emits silence,
+`PiperEngine` is a voice registry with a `TODO`, no `.cvpack` contains a model, and
+`vocal_core::REAL_SYNTHESIS_AVAILABLE == false`. Treat everything below as "the work that
+has to happen", not "the work that mostly happened".
+
+---
+
+## 1. The numbers that decide the design
+
+Third-party on-device benchmark (Picovoice, 2026 — desktop CPU, single core; measure on
+your real hardware before committing, but the relative ordering is what matters)
+[2](https://picovoice.ai/blog/on-device-tts/):
+
+| Engine | Model size | Peak memory | Time to first sample | Streaming out | License |
+|---|---|---|---|---|---|
+| Piper TTS | 61 MB | 2.6 GB | 1,720 ms | yes | MIT (engine), **per-voice** (models) |
+| Kokoro-82M | 341 MB | 2.0 GB | 3,658 ms | yes | Apache-2.0 |
+| Kyutai Pocket TTS | 242 MB | 610 MB | 1,713 ms | yes | MIT |
+| KittenTTS Nano (int8) | 42 MB | 320 MB | **10,483 ms** | **no** | Apache-2.0 (see §3) |
+| Picovoice Orca | 7 MB | 41 MB | 106 ms | yes | **proprietary/commercial** |
+
+### Measured in this repo, not quoted (2026-09-03)
+
+[`docs/research/KOKORO_OFFLINE_SPIKE.md`](./research/KOKORO_OFFLINE_SPIKE.md) synthesised real speech
+with the actual graph, in the sandbox, from weights pulled off npm because Hugging Face is
+blocked here. Against a model *in this family* (int8 Kokoro-82M, 88.1 MiB, vocoder fused into
+the graph, 24 kHz mono):
+
+| Item | Measured | Against the table above |
+|---|---|---|
+| Model size | 88.1 MiB (int8 export) | the blog's 341 MB is the fp32 Kokoro export — quantisation is ~4×, and it is *free* to adopt |
+| Peak RSS | 284 MiB (Python, one thread) / 334 MiB (with the G2P model too) | "2.0 GB" is the fp32 Python story; a Rust/`ort` build should be nearer the model size, but that number is still unmeasured on a board |
+| RTF, 1 thread, nproc=2 | 1.79 (en) · 1.86 (en, permissive G2P) · 2.35 (hi) | >1 ⇒ **not** real-time on a single modest core; sentence-at-a-time, not stream-and-play |
+| Session load | 0.57–0.75 s | matters for a robot that boots cold |
+| Graph contract | `input_ids` i64[1,L] + `style` f32[1,256] + `speed` f32[1] → `waveform` f32[1,N] | **no separate vocoder session** — Step 1's two-session plan collapses to one for this export |
+| Voice asset | 522,240 B = 510 × 256 f32 per speaker | a *persona* is 0.5 MB; the model is shared. See §5 |
+| Output level varies by voice | peak 0.50 (af_heart) → 0.99 (hf_alpha), same graph | a device player needs loudness normalisation; 0.99 is one hot voice from clipping |
+
+Two of those change the design immediately: the fused vocoder (less to port) and the per-voice
+peak spread (a required post-stage, not an optional one).
+
+Quality context from the same survey of public comparisons
+[5](https://www.promptquorum.com/power-local-llm/local-tts-voice-cloning-piper-coqui-xtts),
+[2](https://picovoice.ai/blog/on-device-tts/):
+
+| Model | Approx. naturalness (MOS, English) | Note |
+|---|---|---|
+| Human reference | ~4.5 | ceiling |
+| Kokoro-82M | ~4.0–4.2 | "very good per parameter", big |
+| Piper VITS | ~3.5 | "good", intelligible, flat, tiny-ish |
+| KittenTTS | small-but-surprisingly-natural for its size | English-focused, no streaming |
+| Neu-TTS-Nano / XTTS-v2 / F5-TTS | varies | XTTS v2 (CPML) and F5-TTS (CC-BY-NC-4.0) are **non-commercial** — unusable for you |
+
+Read those two tables together and the design conclusions are forced:
+
+- **"Very good" and "20 MB, fully offline, on a toy" is not currently available for free
+  from anyone.** The 20 MB target in `docs/research/20MB_CHALLENGE.md` with MOS > 4.0 is a
+  research program (quantization, distillation, shared backbone + speaker adapters), not a
+  phase. It is a 2027-sized goal, not a 2026-sized one.
+- **Real-time interactive voice needs streaming synthesis.** Kitten Nano's 10 s time-to-first-sample
+  and no-streaming behaviour makes it fine for "read this notification" and wrong for
+  "conversation with a robot". That is a product-fit decision, not a quality one.
+- **Peak memory is the real embedded constraint, not model size.** Piper's 61 MB model
+  wanting 2.6 GB peak (because of ONNX Runtime arenas + espeak-ng data + phoneme caches) is
+  the single most important number in this table for a Pi Zero/toy target. It must be
+  measured and *configured*, not assumed.
+- **A Raspberry Pi 4/5 (2–4 GB) can run this. A microcontroller (ESP32-S3 class) cannot run
+  any of these models.** For an ESP32-class toy, the honest architecture is: pre-generated
+  clips + concatenative/unit-selection playback for a fixed phrase set, or a small
+  vocoder-driven approach, with neural TTS on a companion device (phone/Pi/edge box). If a
+  battery toy must speak arbitrary text offline, that is the actual research project here.
+
+### Recommended target tiers
+
+| Tier | Hardware | Engine choice | Quality | Why |
+|---|---|---|---|---|
+| **T0 (ship first)** | Desktop/server, Pi 4/5 (2 GB+) | **Piper** (VITS, 22k/medium) | ~3.5, intelligible | MIT engine, tiny models, streams, espeak-ng path proven on Pi; the fastest route to *audible* |
+| **T1 (quality)** | 4 GB+ RAM, modern CPU | **Kokoro** or **Pocket TTS** | ~4.0+ | Apache/MIT, much better prosody; Kokoro too heavy for small boards |
+| **T2 (clone/persona)** | Same as T1 | **Pocket TTS voice cloning** from a short reference | inherits model | MIT, 242 MB, ~5 s reference → the cheapest legitimate route to "our own voice" without training a model from scratch |
+| **T3 (toy/MCU)** | ESP32-S3 etc. | **No neural TTS.** Clip set + concatenative, or delegate to a paired device | n/a | Do not promise offline arbitrary-text speech here |
+
+`ADR-001` recommends Piper; that recommendation still holds **for T0**, and should be
+accepted with the licensing conditions in §3 written into it.
+
+---
+
+## 2. Re-sequenced plan (each step has a binary exit test)
+
+The PRD ordered this as *backend → daemon → SDK → size research*. For your goals the
+ordering above buries the two hardest things (audible quality, device fit) behind a year of
+surface area. Re-sequence:
+
+**Step 0 — truth + build (done 2026-09-03, this commit).**
+Compilable workspace, honest docs, `REAL_SYNTHESIS_AVAILABLE`, enforced pack limits,
+`docs-truth` CI gate. Exit: `cargo build --workspace --all-targets` green; CI green.
+
+**Step 1 — ONE real sentence of audio (days, not quarters).**
+*Status 2026-09-03 (later the same day): the deterministic half has landed. Everything the engine
+must do around the graph is now Rust and CI-tested — `style_matrix.rs` (510×256 LE decode, the
+row-index rule, exact-size rejection), `audio_levels.rs` (floor conversion + loudness with a peak
+ceiling and a max-gain cap), and `tests/dsp_parity.rs`, which grades both rules against
+`tests/fixtures/kokoro/dsp_parity.json`: the raw float32 output of the very run that produced
+`assets/offline-spike/af_heart-en_us.wav`, so passing means the crate reproduces committed reference
+audio sample-for-sample with no tolerance anywhere. That also fixed a live bug: `wav.rs` scaled with
+`.round()` where the reference floors, i.e. the "already implemented and tested" item 4 below was
+**not** bit-compatible with our own evidence. What remains is the `ort` session call itself, which
+needs a machine with crates.io; CI compiles them under `--all-features` and *runs* them: `Unit Tests` on
+all three OSes is green at `56f13b3`, with the parity assertions among them. One test failed on the
+first push and it was my hand-written expectation, not the rule (`-1.0` floors to -32767, so the
+bottom int16 rail is unreachable from in-range audio) — which is what grading against data is for.*
+Accept `ADR-001` (Piper for T0). Then, in `PiperEngine` behind `--features piper`:
+1. `ort::Environment` + `Session` load from bytes already in the `.cvpack` (never a path
+   fetch — `fetch-models` stays off; it is now removed from the workspace manifest).
+2. Piper's input contract: phoneme ID sequence + speaker ID + length/scale/noise tensors →
+   mel → **vocoder** session → PCM. Two sessions (acoustic + vocoder) or one fused export;
+   decide and record it in an ADR.
+3. Phonemization: see §3. This is the hard part, not the ONNX part.
+4. Write PCM through `vocal_core::wav` (already implemented and tested).
+- **Exit test:** a CI job runs `chiti-voice speak --voice tara "Hello" --engine piper` on a
+  *real* model and asserts (a) exit 0, (b) PCM RMS > threshold, (c) duration within ±20% of
+  expected. Then flip `REAL_SYNTHESIS_AVAILABLE = true`. `docs-truth` then *requires* the
+  docs to stop saying "No audible voice" — the flag keeps prose and code locked together.
+- Also add: `cargo test --benches` RTF measurement vs. wall-clock playback length.
+
+**Step 2 — device fit, before any API surface.**
+On the actual hardware: RSS, time-to-first-sample, RTF, cold-start model load, pack size.
+Then set `PackLimits` per tier from measurements (the `embedded()`/`tiny()` profiles exist
+now and are guesses to be replaced by data). Decide the memory story for ONNX Runtime
+arenas, and whether `mmap` loading of `model.onnx` is acceptable (it changes the pack format:
+external-data files must then be declared in the manifest, which the allowlist already supports).
+- **Exit test:** published table of measured numbers per device; a documented `MIN_HW` and a
+  startup budget (< 300 ms warm, < 2 s cold is a reasonable target to argue about).
+
+**Step 3 — the surface you actually wanted: daemon + SDK.**
+`vocal-local` Axum daemon on `127.0.0.1:7731` implementing `docs/api/HTTP_API.md`
+(`/v1/speak`, `/v1/health`, `/v1/stop`), chunked PCM streaming, cancellation within 100 ms
+(FR-025/034), and `@chiti/voice-web` on top. This is where "connect it to my projects"
+becomes true. Keep `SynthesisResponse` as the wire contract so the CLI and daemon share one
+engine path.
+- **Exit test:** a browser page and a Node script speak the same sentence with the network
+  disconnected (DevTools offline + no outbound route), and `stop()` silences in < 100 ms.
+
+**Step 4 — the two invariants that make it a product, not a toy library.**
+- Text normalization for Indian English and Hindi (₹ lakh/crore, DD/MM/YYYY, phone numbers,
+  "Dr./Shri./IAS/ISRO", numerals → words). This is where TTS products actually fail, and it
+  is currently a `Ok(text.to_string())` stub. Own it deliberately (a small rule engine + a
+  pronunciation dictionary), not as Phase 6 filler.
+- Provenance/licensing gate per pack (already started: the builder refuses to emit a
+  non-placeholder pack with incomplete provenance, and CI checks it).
+
+**Step 5 — persona runtime wiring, then quality research.**
+Intent → prosody applied by the engine, not just parsed — and the manifest now says only what can be
+applied: `rate` goes to the graph's `speed` input, `energy` becomes a dBFS offset on the loudness
+stage, `pause_factor` becomes inserted silence, and `pitch` is realised by **cast selection** (a pack
+must set `pitch_baked_into_style` or the value is rejected at load). `warmth`/`expressiveness` stay out
+of the manifest entirely; they are documented, not dialled (§6).
+Then, and only then, the `20MB_CHALLENGE` research track (quantization/distillation, shared
+backbone + adapters), and the browser-native WASM/WebGPU question — which is a *separate
+engineering problem* (§4), not a later phase of this one.
+
+Steps 1–2 are where the product either exists or doesn't. Everything after that is surface.
+
+---
+
+### Resolved 2026-09-03 (docs): claims that nothing checked
+
+`docs/architecture/INVARIANTS.md` documented enforcement that does not exist: a dependency-audit
+script (`scripts/audit-llm-deps.sh`) and an API-surface script (`scripts/check-api-surface.ts`) that
+were never written, a static-analysis grep pointed at `crates/chiti-vocal-core/src/` -- a directory
+that has not existed under that name since the crates were renamed, so the documented check would
+return zero matches on any tree and pass forever -- and two files (`pack/verify.rs`,
+`persona/resolver.rs`) whose real counterparts are `crates/voice-pack/src/security.rs` and
+`crates/vocal-core/src/persona.rs`. Every one of those is now described as it is: `security.rs`'s
+`validate_files` with its `without_provenance_check()` caveat named, the CI job's actual grep and its
+actual limit (manifests, not the transitive graph), and the two absent scripts recorded as absent.
+
+`docs/LICENSES_THIRD_PARTY.md` is new, because `PRD.md` required the catalogue and shipping derived
+persona voices depends on it. It says plainly that the Kokoro carrier's MIT licence covers its code
+and not its model data, so blends remain unshippable.
+
+`scripts/verify-doc-claims.py` is the gate. It resolves backticked paths per-file (crate-relative
+shorthand allowed), treats a *paragraph* -- not a line -- as the unit of "this document says the thing
+is absent", fails when a documented grep or test targets a path that does not exist, checks both
+directions of its `PLANNED` allowlist, requires `docs/api/*.md` to keep their `STATUS: NOT IMPLEMENTED`
+banner, and cross-checks the README's headline claim against `REAL_SYNTHESIS_AVAILABLE` in source. It
+starts with `--self-test`, which plants a false claim in a temp tree and demands the script catch it:
+the first version of this checker lost its file loop in an edit and reported a clean tree in under a
+second, so a gate that cannot fail is not trusted here. **Limit, stated rather than discovered:** the
+steps live in `ops/ci/ci-phase1.yml`, the successor workflow, so the gate runs once that is installed
+with `scripts/install-ci.sh`; the live `.github/workflows/ci-phase1.yml` cannot be edited from this
+environment, and its docs checks are narrower than these.
+
+### Resolved 2026-09-03 (tests): the public API had never been used from outside its crates
+
+Every test in this workspace is compiled inside the crate it tests, which means an in-crate test passes
+whether an item is `pub` or `pub(crate)`, whether an error type can be named from outside, and whether
+the pieces compose at all. "The public API is sufficient to build something" was therefore a claim with
+no check behind it, so `apps/sample-reader` exists: a separate package with path dependencies, no special
+access, its own integration tests driving the built binary as a subprocess, and `clippy -D warnings`
+applied to it by the same jobs as everything else. It loads a tracked `voice-pack` archive, takes the
+persona's *resolved* chunking policy rather than inventing one, plans through `plan_pieces`, renders and
+writes a WAV, and prints a report line per input so a test can assert on behaviour instead of exit codes.
+It states `REAL_SYNTHESIS_AVAILABLE=false` in its own output, because a sample that writes a `.wav` and
+says nothing about the engine being a mock is how a README comes to claim audible output.
+
+Three things came out of writing it, which is the point of writing these:
+
+- `encode`'s arithmetic, now in its doc comment and pinned by `crates/vocal-core/tests/phoneme_framing.rs`:
+  the result is always `chars + 2` ids until it saturates at `MAX_TOKENS`, because the sequence is framed
+  `PAD … PAD`. An integrator who sizes `input_ids` from the content count allocates one row short and the
+  model reads a truncated sequence. Nothing in the tree said that in one line before the sample tried to.
+- The temptation to make counts agree by calling `strip_to_vocab` is a trap the crate already documents --
+  filtering changes the sequence length, the style row is the sequence length, so a filter in the synthesis
+  path moves prosody along with the sound. The sample pads, and keeps a fixture line whose ASCII `g` the
+  table lacks, so the pad path is exercised by the corpus rather than described.
+- `row_matches_units` and `framed_ok` are hard errors, not notes. A style row disagreeing with its
+  utterance's unit count means the index into the voice vector moved, which is a silent change of voice.
+
+Two of the five tests were wrong before any of this and are worth recording as failures of process. The
+determinism test compared stdout from two runs writing into two *different* temp dirs, so it could only
+fail on the printed path; both runs now share a directory, and the WAV is read back between them. And the
+crate's own README shipped an example run with invented numbers including `tokens=11`, which was both the
+wrong count and the wrong relation -- that example is now a field shape with `…` wherever a value was
+never measured, and the only literal numbers left are the ones a reader can grep out of
+`voice-packs/tara/manifest.json`. A sample document is the highest-leverage place to teach a number that
+was never measured, because everyone copies it.
+
+The doc gate earned its keep on this slice too, by producing a false finding: it skipped any directory
+named `dist` to avoid build output, then reported the repository's *tracked* `voice-packs/dist/*.cvpack`
+files as missing and blocked a correct commit. It now enumerates tracked files with `git ls-files`, with a
+directory walk kept only as a fallback for tarballs and for its own `--self-test` tree. A gate that invents
+findings is worse than no gate, because it trains the reader to ignore it.
+
+## 3. The licensing trap, stated plainly
+
+`LICENSE` now carries the table; this is the short version, because it can invalidate the
+whole plan rather than a line item.
+
+- **Piper (engine) = MIT** → fine to embed commercially.
+- **Piper voices are licensed per model.** The engine being MIT says nothing about the
+  `.onnx` weights; individual model cards differ (CC0, CC-BY, CC-BY-SA, and some
+  non-commercial terms) [1](https://ithub.global.ssl.fastly.net/estebanstifli/LocalText2Voice/blob/main/THIRD_PARTY_NOTICES.md),
+  [3](https://huggingface.co/agentvibes/piper-custom-voices). "Apache 2.0", which the
+  placeholder manifests in this repo previously asserted for a file that did not exist, is
+  not a safe default and has been removed.
+- **The wheel, not just the tool.** Measured: `piper-tts` 1.7.0's own packaging metadata says
+  `License: GPL-3.0-or-later` and ships `espeak-ng-data` (125 entries) inside the wheel — so
+  "Piper is MIT" is true of the engine and false of the artifact you would install. Same for
+  the phonemiser in any stack that bundles espeak's data. **The phonemiser is the copyleft
+  boundary in this product, not the ONNX graph.**
+- **espeak-ng = GPL-3.0.** Piper uses it for phonemization/G2P. Shipping it *inside* a
+  proprietary distributed binary is the classic way to acquire a source-disclosure
+  obligation for your own binary. Options, in order of cleanliness: (a) use a non-GPL G2P
+  path — **now measured, not speculated:** `expo-open-phonemizer@1.0.1` (MIT) pairs a
+  274,927-entry `en_us` lexicon with a 61 MB char-level G2P graph, and
+  `scripts/extract-open-phonemizer.py` + `scripts/spike-kokoro-offline.py --phonemizer open`
+  synthesise a sentence through it with no GPL component in the path. Its limits are real and
+  stated: `en_us` only (so `hi` still needs espeak-ng or our own G2P), no licence stated for
+  the weights inside the tarball, and it mispronounces out-of-lexicon proper nouns —
+  "Chiti" came out `tʃˈaːɾi`. KittenTTS 0.8's learned G2P and Kokoro's `misaki` route still
+  need the same independent verification,), (b) ship espeak-ng as a separate process/package with its
+  own license boundary, (c) accept GPL for that component and structure accordingly. **Make
+  this a written decision in `ADR-002` before Step 1 finishes.** Note the same trap exists
+  for KittenTTS's *reference Python package*, which has been reported to pull GPL-3.0
+  `phonemizer` even though the project is Apache-2.0
+  [4](https://news.ycombinator.com/item?id=44807868) — i.e. *engine license ≠ artifact
+  license ≠ frontend license*. Audit the whole path, in the language you will ship.
+- **Non-commercial-only models to avoid**: XTTS v2 (CPML), F5-TTS (CC-BY-NC-4.0)
+  [5](https://www.promptquorum.com/power-local-llm/local-tts-voice-cloning-piper-coqui-xtts).
+  Both are popular in "clone a voice" tutorials. Both are unusable for a paid product.
+- **Hindi.** Don't assume parity with English. Check what exists for `hi-IN` in Piper's
+  catalog and in AI4Bharat's IndicTTS line, and evaluate MOS before promising KASHI to
+  anyone.
+
+A 30-minute license audit per candidate now is cheap. After Step 1 it becomes either a
+legal conversation or a re-platform.
+
+---
+
+## 4. "Any device" — where the current architecture silently fails
+
+`Rust + ort` gets you: Linux x86_64/ARM64/RISC-V, Windows, macOS. **That is not "any
+device."** It does not get you browsers, and it does not practically get you Android/iOS,
+because ONNX Runtime's distribution story, WASM size, and mobile toolchains are different
+projects, not build flags. The PRD pushes browser-native to Phase 12, which is backwards if
+a browser or phone is a real target.
+
+Decide now, per device you care about:
+
+| Target | Feasible path | Cost |
+|---|---|---|
+| Desktop app / server | link `vocal-core`, or loopback daemon | low (Steps 1–3 as planned) |
+| Raspberry Pi / robot | same binary + `PackLimits::embedded()` + measured budgets | low–medium |
+| Web page, no install | `onnxruntime-web` WASM/WebGPU, model in a service-worker cache; **or** a hosted daemon you do not control | high; a separate engine path, own quantization, own 20 MB-plus-size problem |
+| Android / iOS | native engine (ONNX Runtime mobile / platform TTS / a C++ core with FFI), plus per-OS audio and packaging | high; effectively another project |
+| ESP32 / MCU | no neural TTS; clip set or delegate to a paired device | medium, but a different product |
+
+The `.cvpack` idea still holds across these (it is a container + manifest + provenance), and
+`ort`-vs-`onnxruntime-web` is exactly what the `VoiceEngine` abstraction was for. But the
+plan must say **which** of those rows is in scope for v1. My recommendation: v1 =
+desktop + Pi via the daemon, and treat browser as a parallel spike (one page, one
+quantized model, WASM) *before* investing in Voice Lab or signing, because it is the row
+most likely to change the pack format and the size budget.
+
+---
+
+## 5. "Generate the voice for me" — what that can actually mean
+
+A `.cvpack` voice is not an audio file; it is a model plus metadata. So "generate a voice"
+resolves to one of three things, with very different costs:
+
+| Path | What you get | Cost | Notes |
+|---|---|---|---|
+| **A. Adopt an existing open voice** | A real, offline, working persona today (e.g. a Piper `en-IN`/`en-GB` voice; Kokoro/Pocket voices for better quality) | days | Fastest. But it is *their* voice, not your brand voice, and "Tara" becomes a label on someone else's timbre. Verify each model card (§3). |
+| **B′. Derive a style vector** (Kokoro-class engines only) | A new persona as a **522 KB** style matrix (510 × 256 f32) against the shared 88 MB graph — which is also why one device can carry the whole roster | days–weeks, one GPU session | Added after the spike, because it changes this table's premise: for this engine family a *voice* is not a model. Caveat found while reading the reference code: the style row is selected by utterance length, so prosody depends on how the daemon chunks sentences (§2 Step 3). Interpolating two existing vectors is cheap and yields a "new" timbre, but it is a blend, not a speaker — say so in any manifest. **Measured 2026-09-03** ([`PERSONA_STYLE_VECTORS.md`](./research/PERSONA_STYLE_VECTORS.md)): all 54 stock vectors surveyed; blending interpolates register (0.4–3.7 % off the weighted mean) but *attenuates pitch range below every source*, so it suits restrained personas and damages expressive ones — a cast is therefore `selection + speed + gain`, and `scripts/derive-persona-style.py` implements it. |
+| **B. Clone/fine-tune toward a target** | A persona that sounds like a reference speaker (**reference clips exist now:** `assets/persona-auditions/*.wav`, 22.9–24.2 s mono 24 kHz — see §5.1) | weeks + GPU | Pocket TTS clones from a very short reference under MIT [8](https://getstream.io/blog/best-on-device-tts-models/) — the cheapest legitimate route to a distinctive voice. Kokoro fine-tuning is Apache-2.0-friendly. Model size/latency then follow the base model, i.e. T1 tier, not a toy. |
+| **C. Commission a speaker + train** | Ownable, consistent, licensable brand voice; satisfies INV_008 properly (consent contract, terms of use, term length, territory) | months + money + a dataset pipeline | The only path that yields a *product asset* you can license onward — which is what a `.cvpack` business model presumes. |
+
+**The constraint on this workspace** (updated by the spike): `crates.io` is still
+unreachable, so **there is still no Rust build verification from here** — that part is
+unchanged and is why `crates/` cannot speak yet. But *"no model download"* was false: the
+npm registry mirrors the weights, so a measured contract, a reference fixture and four
+listen-test clips could be produced here after all. Re-read that as a lesson about this
+repo's habit of accepting a blocker as given. What is possible from here:
+writing and statically reviewing the ONNX/phonemization code, all the pack/CI/docs/tooling
+work (done), and producing **audition audio to fix the persona direction** — which is the
+prerequisite for both B and C, and is the part of "generate the voice" that can actually be
+decided today. Choose the direction, then A gets you speaking this week while B/C is
+commissioned in parallel.
+
+---
+
+### 5.1 Reference audio that already exists (2026-09-03)
+
+`assets/persona-auditions/` holds one ~23 s clip per persona (tara, kashi, bobo), with
+measured properties and checksums in its README. They were produced by a third-party
+text-to-speech service, so they are:
+
+* **usable as path B input** — zero-shot cloners take a few seconds of reference and imitate
+  the timbre; 23 s is more than enough, and each clip already covers that persona's intent
+  profiles (warm/greeting/alert/calm for Tara, calm/guidance/knowledge for Kashi,
+  excited/playful/encouraging/calm for Bobo);
+* **usable as path C's brief** — the thing to hand an actor and say "this, but yours";
+* **not** a `.cvpack`, not a model, not loadable by anything in `crates/`, and not evidence
+  that `REAL_SYNTHESIS_AVAILABLE` should be true;
+* **not a licensable voice asset.** A machine-generated performance gives no actor contract to
+  point at and, in most jurisdictions, weak grounds for an exclusive right in the *timbre*
+  itself; the rendering model's own terms also govern the output. If the product needs a voice
+  it can license to others, path C is the only one of the three that produces that.
+
+Re-render rather than overwrite if a different take is wanted, so the checksums stay
+meaningful.
+
+
+## 6. Known gaps deliberately left open by this commit
+
+- Four of the five parameters in `docs/personas/*.md` (Pitch, Energy, Warmth, Expressiveness) are
+  **not engine inputs** — verified against the ONNX graph, which accepts `input_ids`, `style`, `speed`
+  and nothing else. They are now documented as casting/post-processing targets rather than dials
+  (`PERSONA_STYLE_VECTORS.md` §1), and the manifest half of that decision is *closed*: `.cvpack`
+  `persona` blocks state only what can be honoured, and `PackValidator` rejects the rest at load
+  (rate band 0.5–1.6, energy as 0–1 mapped to a dBFS offset, `default_pitch` only with
+  `pitch_baked_into_style`, no per-intent pitch). Still open, and a product call rather than an
+  engineering one: whether `warmth` and `expressiveness` stay in the specs at all, given that they
+  have no implementation and no proposed one — they are recorded in the persona docs and the recipe
+  JSONs in the meantime.
+- `zip = "0.6"` — two majors behind (0.6 → 2.x renamed the write/read APIs). Not upgraded
+  blind because nothing here can compile-check it; do it in a PR with `cargo test` running.
+- `security.rs` returns `Result<(), String>`; `error.rs` therefore maps pack failures to
+  `VoiceErrorCode` by keyword. Replace with a typed `ValidationError` for exact mapping.
+- `VoiceCapabilities.supported_formats` still advertises `ogg` with no encoder anywhere; the
+  CLI errors honestly. Either implement a container (opus) or narrow the capability list.
+- `docs/api/*.md` describe unimplemented surfaces. They are specifications, marked as such in
+  the README table; they are not evidence of anything.
+- No audio-device playback in the CLI (`rodio` etc. not added: dependency bar in `AGENTS.md`).
+- `Cargo.lock` is still absent — it must be generated on a machine with crates.io access and
+  committed. CI's `supply-chain` job now fails if it is missing.
+- `.cvpack` can now express three of the four things the measured engines need: where the
+  510 × 256 style matrix comes from (`persona.style`: one stock voice, a bounded blend, or a packed
+  file of exactly 522,240 bytes), a bounded output-loudness stage (`persona.loudness`), and a
+  `pronunciation_overrides` map for proper nouns (`chiti` → `ˈtʃɪti`, which is what the permissive
+  graph otherwise mangles). Packs are generated from the spec docs by
+  `scripts/sync-persona-manifests.py` (`--check` is wired into `ops/ci/`; the live Phase 1 workflow's
+  job list is fixed). Of the two gaps recorded there, the more dangerous one is now closed at the
+  engine level: `vocal_core::utterance_plan` owns the chunking policy, because the style row is selected
+  by utterance token count and so how the daemon splits sentences *is* the prosody. Its default ceiling
+  is 509 tokens — one below what `encode` truncates at — which makes truncation of a long request
+  structurally impossible instead of silent, and `PlanPolicy` travels with every `Plan` so a rendering
+  can be reproduced. The manifest half is closed too: `persona.chunking` is a field (`ChunkingConfig`,
+  declared by all three packs), `voice-pack` rejects an incoherent pair while deliberately leaving the
+  window bound to the engine that owns it, `Persona::chunking_policy` resolves the declaration against
+  the real 512-slot model, and the offline gate plans a 200-sentence input under every tracked pack's own
+  policy to prove the numbers are usable rather than merely present. What the field does NOT yet buy: the
+  mock path ignores it, so the policy is enforced on load and in planning, not on the silent audio the
+  current engines produce — which is the same honest state as every other persona field until real
+  inference lands. The other gap is narrowed but open: **no tokenizer slot** -- the
+  id *numbering* is still an out-of-band file, though representability is now enforced at load.
+- **Resolved 2026-09-03.** `encode` used to filter out characters outside the 115-entry vocab, while the
+  reference maps them to a `PAD` token (`vocab.get(c, pad)`). Because the style row *is* the token count,
+  that filter shifted the row as well as removing a sound — and the exposure was structural, not
+  theoretical: this vocabulary carries U+0261 (script-g) and not ASCII `g`, which is what espeak-style IPA
+  emits for /g/, so a phonemiser without that one mapping dropped every 'g' in a language and reported
+  nothing. `encode` now pads, matching upstream; no graded fixture moved, because `tests/kokoro_tokens.rs`
+  already asserts the reference strings need no filtering, which is the check that made the change safe to
+  make without a compiler. What got *stricter* instead is a persona's own claim:
+  `Persona::check_overrides_encodable` refuses a `pronunciation_overrides` value the graph cannot spell —
+  for running text a pad is faithful, for the one string a pack asserts by name it is the failure the
+  field exists to prevent. `verify` in the CLI runs it, and `vocal-core`'s offline gate runs it against
+  every tracked pack, so the promise in `manifest.rs`'s doc comment ("checked for encodability in
+  `vocal-core`") is now a description of code rather than of an intention. The remaining half of the gap
+  above is the id *numbering*, which stays an out-of-band asset on purpose: two copies of a table is how
+  the next one of these bugs starts.
+
+- Loudness normalisation exists and is measured, but nothing that produces audio uses it yet:
+  `vocal_core::audio_levels` implements the `target_dbfs` / `peak_ceiling` / `max_gain_db` stage the
+  manifest declares, `tests/dsp_parity.rs` grades the i16 scaling against real graph output, and the
+  persona runtime maps intent energy onto it. The gap is that only the mock path runs it — which is
+  Step 2's job, not a schema job. The spike's reason for the stage is unchanged: peak ranged 0.50–0.99
+  across voices on one sentence, and 0.99 is one hot voice from clipping.
+- `MOCK` engine's silence-as-valid-audio design invites exactly the false-completeness this
+  repo had. Consider making `MockEngine` refuse unless `#[cfg(test)]` or an explicit
+  `--allow-silence`, and deleting the "produces audio" framing from all future docs.

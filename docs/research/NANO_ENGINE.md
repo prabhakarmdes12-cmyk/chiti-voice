@@ -1,28 +1,28 @@
-# Chiti Vocal Runtime — Nano Engine Research Track
+# Chiti Vocal Runtime â€” Nano Engine Research Track
 Classification: RESEARCH (not production commitments)
 Date: September 2026
 
 ## Research Question
-> How small can a pleasant, recognizable, expressive, multilingual machine voice become — while remaining offline-capable on low-end hardware?
+> How small can a pleasant, recognizable, expressive, multilingual machine voice become â€” while remaining offline-capable on low-end hardware?
 
 ## The Font Analogy
 ```
 TYPOGRAPHY MODEL:
-  Large shared renderer (FreeType, HarfBuzz) + small font files (.ttf, ~100 KB–5 MB)
+  Large shared renderer (FreeType, HarfBuzz) + small font files (.ttf, ~100 KBâ€“5 MB)
   ? Many typefaces, one renderer
 
 VOCAL RUNTIME HYPOTHESIS:
-  Shared small acoustic foundation (~20–40 MB) + small voice adapters (~1–10 MB per voice)
+  Shared small acoustic foundation (~20â€“40 MB) + small voice adapters (~1â€“10 MB per voice)
   ? Many voices, one model
 ```
 
 ## Architecture Candidates to Investigate
-1. **VITS / FastSpeech2 Distillation** — Distill a large model into a smaller backbone.
-2. **StyleTTS2 Adapter Pattern** — Shared backbone + per-speaker style embeddings.
-3. **Flow-Matching Nano** — Minimal flow-matching architecture from scratch.
-4. **Kokoro-q8 INT8 Quantization** — Quantize existing Kokoro to INT8 via ONNX.
-5. **Piper VITS (existing baseline)** — Baseline: already small, what is the quality floor?
-6. **Low-Rank Adaptation (LoRA)** — Shared backbone + per-voice LoRA adapter weights.
+1. **VITS / FastSpeech2 Distillation** â€” Distill a large model into a smaller backbone.
+2. **StyleTTS2 Adapter Pattern** â€” Shared backbone + per-speaker style embeddings.
+3. **Flow-Matching Nano** â€” Minimal flow-matching architecture from scratch.
+4. **Kokoro-q8 INT8 Quantization** â€” Quantize existing Kokoro to INT8 via ONNX.
+5. **Piper VITS (existing baseline)** â€” Baseline: already small, what is the quality floor?
+6. **Low-Rank Adaptation (LoRA)** â€” Shared backbone + per-voice LoRA adapter weights.
 
 ## Baseline Targets
 - **Phase 1 baseline:** < 150 MB total (model + voice assets)

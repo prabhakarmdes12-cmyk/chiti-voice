@@ -50,7 +50,7 @@ Voice is infrastructure. Applications that depend on voice (accessibility tools,
 
 **Enforcement Mechanism:**
 
-- `chiti-vocal-core` has zero HTTP client dependencies in `Cargo.toml`. Any PR adding `reqwest`, `hyper`, `ureq`, or similar is blocked by a `Cargo.toml` dependency audit check in CI.
+- `vocal-core` has zero HTTP client dependencies in its `Cargo.toml`. The CI job `Dependency Audit - No Cloud/LLM Dependencies` greps `Cargo.toml` and `Cargo.lock` for cloud SDK names and `crates/vocal-core/Cargo.toml` for LLM crates, and fails the build. Its limit is worth stating rather than left to memory: it reads manifests, so a cloud client pulled in transitively is not caught until `cargo tree` is audited where crates.io is reachable.
 - The offline integration test in CI uses a network-isolated environment.
 - Code review checklist includes explicit: "Does this change add any network call in the synthesis path?"
 
@@ -74,13 +74,13 @@ The Chiti Vocal Runtime MUST NOT require, call, or depend on any Large Language 
 
 **Test Approach:**
 
-- Static analysis: `grep -r "llm\|openai\|anthropic\|ollama\|gemini\|gpt\|transformers" crates/chiti-vocal-core/src/` must produce zero results (automated in CI).
-- Dependency audit: `cargo tree` output for `chiti-vocal-core` must not include any LLM inference library.
+- Static analysis: `grep -r "llm\|openai\|anthropic\|ollama\|gemini\|gpt\|transformers" crates/vocal-core/src/` must produce zero results. This grep is a review step, not a CI step: the job above audits dependency manifests only.
+- Dependency audit: `cargo tree` output for `vocal-core` must not include any LLM inference library.
 - Behavioral test: Synthesize a sentence using only the runtime with no LLM service running. Assert success.
 
 **Enforcement Mechanism:**
 
-- Dependency audit script in CI (`scripts/audit-llm-deps.sh`) fails the build if any prohibited dependency appears in the core crate's transitive dependency tree.
+- The CI job `Dependency Audit - No Cloud/LLM Dependencies` fails the build when a prohibited name appears in a manifest. and there is no such script: an earlier draft of this document named a script that was never written, and a check that does not run is worse than no check, because it manufactures confidence. Auditing the transitive tree is still open, for the same reason `Cargo.lock` is absent -- it needs crates.io access.
 - Architecture review required for any text transformation added to the synthesis pipeline.
 
 ---
@@ -103,13 +103,13 @@ Provider independence enables the runtime to upgrade, replace, or run multiple b
 
 **Test Approach:**
 
-- Compile-time check: The public TypeScript type exports of `chiti-voice-sdk` must not include the string "piper", "kokoro", or any concrete engine name. CI script (`scripts/check-api-surface.ts`) parses exported types.
+- Type-surface check: the public exports of `chiti-voice-sdk` must not include "piper", "kokoro" or any concrete engine name. Enforced by review only: the SDK is a specification in `docs/api/TYPESCRIPT_API.md` and no package exists to parse, so no CI script implements this.
 - Runtime test: Register both `MockEngineA` and `MockEngineB` behind the VoiceEngine interface. Synthesize with both. Assert that the `SynthesisResult` received by the application contains only `engineId` (an opaque string) — no engine-specific metadata leaks.
 - Integration test: Swap the active engine between two registered implementations at runtime. Assert the application receives audio from both without any code change on the application side.
 
 **Enforcement Mechanism:**
 
-- `VoiceEngine` interface defined in `packages/chiti-voice-sdk/src/types.ts` — concrete engine types live only in `crates/chiti-vocal-core/src/engine/`.
+- `VoiceEngine` is defined in `crates/vocal-core/src/engine/mod.rs`, and concrete engine types live only under `crates/vocal-core/src/engine/` (`mock.rs`, `piper.rs`). There is no `packages/` tree, so the TypeScript mirror of the interface is a planned file, not a present one.
 - API surface audit in CI.
 
 ---
@@ -138,7 +138,7 @@ Personas will evolve. New regional personas will be added. Existing personas wil
 **Enforcement Mechanism:**
 
 - `PersonaRuntime::load_from_config()` is the only code path that produces `SynthesisParams`. There is no `PersonaRuntime::tara_defaults()` function.
-- Code review: Any PR modifying `persona/resolver.rs` must be reviewed for hardcoded parameter introduction.
+- Code review: Any PR modifying `crates/vocal-core/src/persona.rs` or `crates/voice-pack/src/manifest.rs` must be reviewed for hardcoded parameter introduction. There is no separate persona resolver module: the persona is built in `Persona::from_pack` and validated in `validate_persona`.
 
 ---
 
@@ -160,13 +160,13 @@ Determinism enables reliable testing, golden-file regression tests, quality benc
 
 **Test Approach:**
 
-- `tests/determinism_test.rs`: Synthesize the same sentence 10 times consecutively with the same parameters. Compare all outputs using `assert_eq!` on the raw `Float32Array`. All 10 must be bit-identical.
-- Run across VOCAL NANO, VOCAL LITE, VOCAL STUDIO model tiers.
+- `crates/vocal-core/tests/determinism_test.rs`: renders one sentence ten times through `MockEngine`, comparing audio bytes and reported metadata each time, renders again on a *second* engine instance (state captured at `initialize()` survives a single-instance loop), re-runs `encode` and `plan_pieces` comparing tokens, units and style rows, and scans the shipped half of each deterministic module for a clock, an RNG or a pid.
+- Not covered, because the things do not exist yet: the `Float32Array` golden comparison against real inference, and the run across VOCAL NANO / LITE / STUDIO tiers. `crates/vocal-core/tests/dsp_parity.rs` grading byte-exact DSP against recorded fixtures is the closest substitute until Step 2 lands.
 - Run on Linux x86_64 CI environment (determinism is per-platform; cross-platform bit-identity is not required).
 
 **Enforcement Mechanism:**
 
-- ONNX Runtime is run with deterministic execution flags where available.
+- ONNX Runtime is run with deterministic execution flags where available. Not applicable yet: no ONNX execution exists in this crate (`REAL_SYNTHESIS_AVAILABLE` is `false`), so there is nothing to configure -- `docs/ROADMAP_EMBEDDED.md` §2 is where this becomes real.
 - No `rand` crate usage anywhere in the synthesis pipeline (G2P, prosody, engine, audio). Only the `requestId` generator uses randomness, and it is explicitly outside the pipeline.
 - CI golden-file test: A known input produces a known SHA-256 hash of output audio. Fails the build if hash changes.
 
@@ -195,8 +195,7 @@ Voice synthesis failing silently is worse than degraded synthesis. A kiosk that 
 
 **Enforcement Mechanism:**
 
-- `ModelLoader` in `crates/chiti-vocal-core/src/engine/` implements explicit tier fallback logic.
-- `EngineHealth` struct has a `degradedTier` field that is populated when fallback occurs.
+- Not implemented: there is no `ModelLoader` and no tier-fallback logic in `crates/`, and `EngineHealth` has no `degradedTier` field. This invariant describes intended design; `scripts/verify-doc-claims.py` exists so an edit cannot quietly restate it as enforcement. The nearest real behaviour is pack loading in `crates/voice-pack/src/security.rs`, which rejects an over-limit or mismatched pack outright rather than degrading.
 
 ---
 
@@ -223,7 +222,7 @@ Voice input and output are sensitive. The text being synthesized may contain per
 
 **Enforcement Mechanism:**
 
-- `chiti-vocal-core`: zero network dependencies (see VOICE_INV_001).
+- `vocal-core`: zero network dependencies (see VOICE_INV_001).
 - `chiti-vocal-service`: explicit bind address `127.0.0.1` in code, not configurable to wildcard.
 - Production build flag `CHITI_VOICE_DEV_LOG` defaults to false; text is never logged unless explicitly enabled.
 
@@ -253,7 +252,7 @@ Voice models trained on data without proper consent or licenses create legal and
 
 **Enforcement Mechanism:**
 
-- `pack/verify.rs`: SHA-256 verification runs unconditionally before any model file is memory-mapped. There is no `--skip-verification` flag in production builds.
+- `crates/voice-pack/src/security.rs`: `validate_files` recomputes each file's SHA-256 and returns `Err` on mismatch, so a tampered pack never reaches a loader. There is no checksum bypass; the verifier's only relaxation is `without_provenance_check()`, which skips the provenance-completeness requirement for research tooling and has no caller in `crates/` or `apps/`.
 - `manifest.rs` schema validation runs before extraction of any pack contents.
 
 ---
@@ -339,15 +338,12 @@ Without limits, a single malicious or buggy caller can exhaust device memory, st
 
 **Test Approach:**
 
-- `tests/resource_limits_test.rs`: Submit a request with 10,001 characters. Assert `TextTooLongError`.
-- Submit 5 rapid concurrent requests with concurrency limit set to 4. Assert the 5th returns `QueueFullError`.
-- Memory profiling test: Run 100 synthesis cycles with NANO model. Assert peak RSS stays within 2× the model size.
+- Planned, not written: the 10,001-character request, the 5-concurrent-requests case and the peak-RSS profile all need a request entry point and a real engine, so `tests/resource_limits_test.rs` does not exist. The pack-side limits are tested today in `crates/voice-pack/tests/pack_security.rs`.
 
 **Enforcement Mechanism:**
 
-- `VocalClient` validates text length before dispatching to the engine.
-- `queue.rs` in the Local Service uses a bounded queue (tokio `mpsc` with capacity).
-- Resource limit constants are defined in a single configuration module — not scattered across the codebase.
+- Enforced today for the *pack* side of the same limit: `PackLimits` in `crates/voice-pack/src/security.rs` caps `max_file_bytes`, `max_total_bytes`, `max_compression_ratio` and `max_file_count`, and the embedded profile is deliberately stricter than the desktop one. Verified by `zip_bomb_is_rejected_before_inflation`, `embedded_limits_are_stricter_than_desktop` and `limits_profiles_are_sane` in `crates/voice-pack/tests/pack_security.rs`.
+- Not implemented for the *request* side, and this document will not pretend otherwise: there is no `VocalClient`, no `queue.rs`, no text-length constant, and neither `TextTooLongError` nor `QueueFullError` exists in `crates/vocal-core/src/error.rs`. The statement above is a requirement on the shipped runtime, not a description of this checkout.
 
 ---
 
@@ -361,7 +357,7 @@ Without limits, a single malicious or buggy caller can exhaust device memory, st
 
 **Statement:**
 
-The Chiti Voice SDK (TypeScript) MUST follow semantic versioning. A MINOR version bump MUST NOT remove or change any existing public API. A MAJOR version bump MUST be accompanied by a migration guide. Voice packs include a `manifestVersion` field; the runtime MUST reject packs whose `manifestVersion` is incompatible with the running runtime version, with a clear error message stating the version mismatch.
+The Chiti Voice SDK (TypeScript) MUST follow semantic versioning. A MINOR version bump MUST NOT remove or change any existing public API. A MAJOR version bump MUST be accompanied by a migration guide. Voice packs declare a `schema_version` field (the manifest key as implemented; this document formerly called it `manifestVersion`); the runtime MUST reject packs whose `schema_version` it does not read, with an error message naming both versions.
 
 **Rationale:**
 
@@ -369,12 +365,11 @@ Applications that integrate the SDK will not all upgrade simultaneously. Breakin
 
 **Test Approach:**
 
-- `tests/version_compat_test.rs`: Load a pack with `manifestVersion: "999.0.0"`. Assert `IncompatibleManifestVersionError` with a message containing both the pack version and the runtime version.
-- TypeScript API test: Export the SDK type surface. Snapshot it. Assert on each MINOR release that no existing exported type has been removed or changed (using `api-extractor` or equivalent).
+- `crates/voice-pack/tests/pack_security.rs::wrong_schema_version_is_rejected` loads `tests/fixtures/bad_schema.cvpack` (which declares `schema_version: "2.0.0"`) and asserts the rejection names both the version the pack declares and the version this runtime reads. `tests/version_compat_test.rs` does not exist; the type-surface snapshot is not implementable either, because the SDK is a specification in `docs/api/TYPESCRIPT_API.md` with no package to export.
 
 **Enforcement Mechanism:**
 
-- `manifest.rs` includes a semver-compatible version check using the `semver` crate.
+- `crates/voice-pack/src/manifest.rs` defines `SUPPORTED_SCHEMA_VERSION` and `security.rs::validate_manifest` compares it exactly. There is no `semver` crate in any `Cargo.toml`: range matching would require a validation path per version, and a reader that parses a newer manifest while ignoring the keys it does not know is worse than one that refuses it.
 - `api-extractor` or `tsd` runs in CI to detect breaking TypeScript API changes.
 - Changelog must be updated as part of any release PR.
 
@@ -430,3 +425,28 @@ There are no emergency exceptions. If the emergency is real, the protocol still 
 ---
 
 *Document maintained by the Chiti Platform Team. For the state machine these invariants protect, see [STATE_MACHINE.md](./STATE_MACHINE.md). For security constraints, see [SECURITY.md](./SECURITY.md).*
+
+---
+
+## Requirements tracked in `PRD.md` without a canonical invariant
+
+`PRD.md`'s invariants table re-used IDs `VOICE_INV_003`–`012` for nine requirements this document does
+not define, while code, `SECURITY.md` and `STATE_MACHINE.md` cite the IDs above. The table now keeps
+the canonical IDs and marks the rest **PRD-only** rather than assigning them conflicting numbers, so
+they are not lost -- they are simply not enforced here:
+
+- Language-Voice Separation · Engine Interface · No Direct Backend Instantiation
+- Persona Config Separation · Loopback Only and No Telemetry (each a specific clause of
+  VOICE_INV_007) · Pack Integrity (enforced as part of VOICE_INV_008 by `validate_files`)
+- No Executable Content (implemented, narrower than the words suggest: `crates/voice-pack/src/security.rs` rejects archive entries by
+  *extension*, and `executable_content_is_rejected` covers it, so an extensionless ELF named `payload` would pass --
+  closing that gap means reading the ZIP mode bits or sniffing magic bytes, neither of which exists yet)
+- RTF Bound (the only exit criterion in the PRD with no implementation
+  or measurement behind it: RTF figures in `docs/research/` are x86-container numbers, not the
+  reference hardware)
+
+Promoting any of them into this document is a product decision, not a documentation cleanup, so it has
+been left open deliberately. What is no longer optional is the ID↔name pairing:
+`scripts/verify-doc-claims.py` parses the `**ID**`/`**Name**` table above, requires this file's headings
+and table to agree, and fails any markdown file *or Rust doc comment* that pairs an ID with a different
+name or cites an ID that is not defined. Run it with `--self-test` to see that it can fail.

@@ -1,4 +1,16 @@
-# Chiti Vocal Local Service � HTTP API Reference
+# Chiti Vocal Local Service — HTTP API Reference
+
+> **STATUS: SPECIFICATION ONLY — NOT IMPLEMENTED (2026-09-03).** No daemon and no SDK
+> exist in this repository: there is no HTTP server, no listener, no `@chiti/voice-web`
+> package, and no TypeScript anywhere. Every symbol below is a design proposal. Earlier
+> documents (`ADR-001`) asserted the SDK had been "established" in Phase 1 — that was false.
+> See `README.md` for what actually runs, and `docs/ROADMAP_EMBEDDED.md` §2 Step 3.
+
+> **Unresolved spec conflict:** this document uses port **8765**, while `README.md`,
+> `PRD.md` and `AGENTS.md` use **7731**. Resolve before implementation — and note the port
+> is security-relevant, since loopback binding plus origin checks are the daemon's only
+> defence.
+
 Base URL: `http://127.0.0.1:8765`
 API Version: v1
 Default Port: 8765
