@@ -365,17 +365,30 @@ jobs:
           print("all text files are clean UTF-8")
           PY
 
-      - name: Relative doc links must resolve
+      # Two ways this step was wrong before, both worth keeping in the record: it looked only at
+      # README.md, so a broken link inside docs/** was invisible, and it resolved every link from the
+      # repository root, so a correct relative link in a nested file (../research/x.md) reported as
+      # broken while the wrong one (./docs/x.md, written when the file had moved to docs/api/) passed.
+      # Both directions of wrong. Link resolution now belongs to the script below, which is per-file
+      # and covers every markdown file in the tree; this step keeps only the two existence checks.
+      - name: Files the README points at must exist
         run: |
           set -euo pipefail
           missing=0
-          for link in $(grep -oE '\]\((\.\./|\./)?[A-Za-z0-9_./-]+\.(md|py|rs|json|yml)\)' README.md | sed -E 's/^\]\(//; s/\)$//'); do
-            path="${link#./}"
-            [ -e "$path" ] || { echo "BROKEN LINK in README.md: $path"; missing=1; }
-          done
           test -f LICENSE || { echo "MISSING: LICENSE (README references it)"; missing=1; }
           test -f .gitignore || { echo "MISSING: .gitignore"; missing=1; }
           exit $missing
+
+      # Run the canary first. A doc gate that silently scans nothing is the failure this repository
+      # has now hit three times in different clothes -- a grep pointed at a renamed directory, a
+      # wrapper whose body had been deleted, and a rewritten checker that lost its file loop and
+      # reported a clean tree in under a second. So the gate must prove it can fail before anyone
+      # believes it when it says the docs are clean.
+      - name: The doc-claims gate must prove it can fail
+        run: python3 scripts/verify-doc-claims.py --self-test
+
+      - name: Documented path claims must resolve
+        run: python3 scripts/verify-doc-claims.py
 
       # Packs are data, and data rots silently. `voice-packs/*/manifest.json` claims numbers that
       # live in docs/personas/*.md and docs/research/persona-recipes/*.json; and `voice-packs/dist/`

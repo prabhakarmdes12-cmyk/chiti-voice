@@ -113,7 +113,7 @@ Security requirements intersect directly with the system invariants. See [INVARI
 **Mitigation:**
 
 - SHA-256 checksums for all model files are declared in `manifest.json`.
-- `pack/verify.rs` computes the SHA-256 of each extracted file and compares against the manifest value.
+- `crates/voice-pack/src/security.rs` computes the SHA-256 of each extracted file and compares it against the manifest value (`validate_files`).
 - If any checksum mismatches, the entire pack is rejected with `PackTamperingError`. No partial loads.
 - The manifest itself is integrity-protected by the pack signature (future: when signing is implemented; current: manifest checksum stored separately in a pack header field).
 

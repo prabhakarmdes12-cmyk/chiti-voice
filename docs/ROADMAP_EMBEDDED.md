@@ -185,6 +185,34 @@ Steps 1–2 are where the product either exists or doesn't. Everything after tha
 
 ---
 
+### Resolved 2026-09-03 (docs): claims that nothing checked
+
+`docs/architecture/INVARIANTS.md` documented enforcement that does not exist: a dependency-audit
+script (`scripts/audit-llm-deps.sh`) and an API-surface script (`scripts/check-api-surface.ts`) that
+were never written, a static-analysis grep pointed at `crates/chiti-vocal-core/src/` -- a directory
+that has not existed under that name since the crates were renamed, so the documented check would
+return zero matches on any tree and pass forever -- and two files (`pack/verify.rs`,
+`persona/resolver.rs`) whose real counterparts are `crates/voice-pack/src/security.rs` and
+`crates/vocal-core/src/persona.rs`. Every one of those is now described as it is: `security.rs`'s
+`validate_files` with its `without_provenance_check()` caveat named, the CI job's actual grep and its
+actual limit (manifests, not the transitive graph), and the two absent scripts recorded as absent.
+
+`docs/LICENSES_THIRD_PARTY.md` is new, because `PRD.md` required the catalogue and shipping derived
+persona voices depends on it. It says plainly that the Kokoro carrier's MIT licence covers its code
+and not its model data, so blends remain unshippable.
+
+`scripts/verify-doc-claims.py` is the gate. It resolves backticked paths per-file (crate-relative
+shorthand allowed), treats a *paragraph* -- not a line -- as the unit of "this document says the thing
+is absent", fails when a documented grep or test targets a path that does not exist, checks both
+directions of its `PLANNED` allowlist, requires `docs/api/*.md` to keep their `STATUS: NOT IMPLEMENTED`
+banner, and cross-checks the README's headline claim against `REAL_SYNTHESIS_AVAILABLE` in source. It
+starts with `--self-test`, which plants a false claim in a temp tree and demands the script catch it:
+the first version of this checker lost its file loop in an edit and reported a clean tree in under a
+second, so a gate that cannot fail is not trusted here. **Limit, stated rather than discovered:** the
+steps live in `ops/ci/ci-phase1.yml`, the successor workflow, so the gate runs once that is installed
+with `scripts/install-ci.sh`; the live `.github/workflows/ci-phase1.yml` cannot be edited from this
+environment, and its docs checks are narrower than these.
+
 ## 3. The licensing trap, stated plainly
 
 `LICENSE` now carries the table; this is the short version, because it can invalidate the

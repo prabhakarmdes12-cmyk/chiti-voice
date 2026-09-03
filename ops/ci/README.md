@@ -83,10 +83,10 @@ Both beats reading the YAML, which is how each of these looked correct.
 This repository's CI logs were unreadable from the auditing environment: the log endpoints
 (`results-receiver.actions.githubusercontent.com`, `objects.githubusercontent.com`) are
 network-blocked there, so `gh run view --log` cannot fetch output, and check-run
-**annotations** were the only channel back. `scripts/ci-rustc-capture.sh`,
-`scripts/ci-test-capture.sh` and `scripts/ci-rustdoc-capture.sh` are wrappers that turn
-rustc/clippy/test-binary failures into `::error::` annotations for exactly that purpose; the
-first two were wired up through `.cargo/config.toml`.
+**annotations** were the only channel back. Three wrappers existed for exactly that purpose --
+`scripts/ci-rustc-capture.sh`, `scripts/ci-test-capture.sh` and `scripts/ci-rustdoc-capture.sh` --
+turning rustc/clippy/test-binary failures into `::error::` annotations, and the first two were wired
+up through `.cargo/config.toml`. None of them is in the tree.
 
 None of those three scripts is in the tree any more, and neither is the `.cargo/config.toml` that
 wired them: they have been removed in the same slice as each fix they served, twice now. Read the

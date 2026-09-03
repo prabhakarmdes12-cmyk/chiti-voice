@@ -259,7 +259,7 @@ A developer should be able to install a voice, call `speak()`, and have it work 
 | ID | Description | Acceptance Criteria | Priority |
 |----|-------------|---------------------|----------|
 | FR-007 | Vocal Core MUST expose a `VoiceEngine` interface/trait that all TTS backends implement. | Two different backends (e.g., Kokoro, Piper) can be swapped by changing one configuration line with no application code changes. | **P0** |
-| FR-008 | No application code MAY directly instantiate a backend implementation. All synthesis MUST go through the `VoiceEngine` interface. | Code review gate: grep for direct backend instantiation in `apps/` and `packages/` returns zero results. | **P0** |
+| FR-008 | No application code MAY directly instantiate a backend implementation. All synthesis MUST go through the `VoiceEngine` interface. | Code review gate: grep for direct backend instantiation in `apps/` returns zero results (the same grep over `packages/` applies once the SDK exists; that directory does not exist yet). | **P0** |
 | FR-009 | The active backend MUST be declared in the voice pack manifest or in a runtime configuration file, not hardcoded. | Backend can be changed via manifest edit alone; no recompile required. | **P0** |
 
 ### 7.4 Voice Pack Installation and Validation
@@ -618,7 +618,7 @@ The following checklist must be fully satisfied before v0.1 is tagged for releas
 - [ ] **Path traversal pack rejected** — a malicious pack with `../` paths is rejected with `PACK_PATH_TRAVERSAL`
 - [ ] **No LLM dependency** — dependency audit finds zero LLM-related packages in `vocal-core` and `voice-web`
 - [ ] **No cloud dependency** — dependency audit finds zero outbound HTTP clients in synthesis path
-- [ ] **Licenses documented** — all third-party licenses (Kokoro/Piper model, ONNX Runtime, etc.) are catalogued in `docs/LICENSES_THIRD_PARTY.md`
+- [ ] **Licenses documented** — the catalogue exists (`docs/LICENSES_THIRD_PARTY.md`, written 2026-09-03) and records what is verified; the box stays unchecked because two entries there are still open: Kokoro's weight licence and the crate-level audit
 - [ ] **RTF ≤ 1.0** — benchmark on reference hardware shows RTF < 1.0 for all three voices
 - [ ] **Loopback binding verified** — `netstat` inspection confirms daemon is not bound to `0.0.0.0`
 - [ ] **Error codes tested** — all typed errors in Section 15 have at least one test that triggers and verifies the error

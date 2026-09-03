@@ -91,6 +91,7 @@ computed from the bytes actually going into the archive):
 python3 scripts/build-voice-packs.py build
 python3 scripts/build-voice-packs.py build --require-real-models   # release: refuses placeholders
 python3 scripts/build-voice-packs.py verify
+python3 scripts/verify-doc-claims.py --self-test && python3 scripts/verify-doc-claims.py  # docs must not overclaim
 ```
 
 `--limits embedded` / `--limits tiny` enforce the resource budgets a Raspberry Pi or toy

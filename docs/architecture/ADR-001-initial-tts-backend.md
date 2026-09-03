@@ -216,7 +216,7 @@ The Persona Runtime selects the engine based on the hardware tier and persona co
 
 ### Immediate Actions (Phase 2)
 
-1. **Implement `PiperEngineAdapter`** in `crates/chiti-vocal-core/src/engine/piper.rs`.
+1. **Implement `PiperEngineAdapter`** in `crates/vocal-core/src/engine/piper.rs`. This text predates the crate rename, and the file that exists today is a skeleton: `REAL_SYNTHESIS_AVAILABLE` is still `false`, so nothing in `crates/` produces audio from the graph yet.
    - Load Piper ONNX model via `ort` (ONNX Runtime Rust bindings).
    - Implement `initialize()`, `loadVoice()`, `synthesize()`, `stream()`, `cancel()`, `health()`, `capabilities()`, `dispose()`.
    - Stream by sentence boundary (Piper's natural unit).
