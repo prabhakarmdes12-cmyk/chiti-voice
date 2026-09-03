@@ -88,6 +88,10 @@ network-blocked there, so `gh run view --log` cannot fetch output, and check-run
 rustc/clippy/test-binary failures into `::error::` annotations for exactly that purpose; the
 first two were wired up through `.cargo/config.toml`.
 
+None of those three scripts is in the tree any more, and neither is the `.cargo/config.toml` that
+wired them: they have been removed in the same slice as each fix they served, twice now. Read the
+following as instructions for resurrecting them, not as a description of this checkout.
+
 They are **scaffolding, not product**: `build.rustc-wrapper` makes non-POSIX platforms fail to
 build at all, and a wrapper that mishandles concurrent invocations will corrupt cargo's JSON
 diagnostics (it did: a shared /tmp file turned a healthy workspace into eight silent
