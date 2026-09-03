@@ -7,6 +7,13 @@ disagrees, re-read the two sections this one depends on: `docs/ROADMAP_EMBEDDED.
 Everything in this file is a command to run or a constraint that binds. It deliberately does not
 restate the design — that is `docs/architecture/` and `docs/ROADMAP_EMBEDDED.md`.
 
+**If you are an agent, start at `AGENTS.md` in the repository root.** That file is auto-loaded by the
+tools that read it, so it carries the same capability line, the commands, and the binding rules in
+compressed form; this document is the longer runbook behind it. Both are checked against the tree by
+`scripts/verify-doc-claims.py`, including a rule that fails if either one omits the capability flag --
+passing by silence is how the last version of this repository got a stale `AGENTS.md` describing
+Next.js, an SDK and an HTTP daemon that were never written.
+
 ## Why local, and what local unlocks
 
 The work so far was done in a sandbox with **no Rust toolchain at all** and with `crates.io`,

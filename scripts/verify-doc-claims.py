@@ -6,7 +6,7 @@ that did not exist, `docs` described a daemon and an SDK that were never written
 `test -f tara.cvpack` and reported "three voices load successfully". Those were fixed. This script is
 what keeps them fixed, because a corrected sentence can regress as easily as the original could.
 
-Four rules, each narrow on purpose -- a broad "docs must match code" checker is unfalsifiable and gets
+Six rules, each narrow on purpose -- a broad "docs must match code" checker is unfalsifiable and gets
 deleted, which is the second way a gate dies:
 
 1. Every relative markdown link resolves to a real path.
@@ -21,6 +21,11 @@ deleted, which is the second way a gate dies:
 4. `docs/api/*.md` must keep their STATUS banner, and `REAL_SYNTHESIS_AVAILABLE` in `vocal-core` must
    agree with what the README's headline row says. The two claims in this repo that a reader is most
    likely to act on are bound to source, not to luck.
+5. An invariant ID may be paired only with the name `docs/architecture/INVARIANTS.md` gives it, in prose
+   and in source comments alike. (The PRD had reused 003-012 for nine different requirements, which is how
+   two documents could cite "VOICE_INV_008" and mean different things.)
+6. A root-level markdown file whose *name* asserts completion (`PHASE1_COMPLETE.md` and friends) must
+   carry a `CORRECTION` / `STATUS:` banner in its first 12 lines, so the title cannot outlive the body.
 
 Paths that legitimately do not exist yet (planned tests cited by an invariant's verification plan, an
 unbuilt SDK) are listed in PLANNED with a reason. That list is checked in both directions: an entry that
@@ -337,17 +342,52 @@ def main() -> int:
                     "`STATUS: ... NOT IMPLEMENTED` in its first 12 lines"
                 )
 
-    # Rule 4b: the headline capability claim is read from source, not from prose.
+    # Rules 4b and 4c: the headline capability claim is read from source, not from prose, and it is
+    # checked in both directions for the two files people act on -- README.md (what a human reads first)
+    # and AGENTS.md (what an agent reads *instead of* checking). A stale README misinforms a reader; a
+    # stale AGENTS.md gets implemented, which is why this file is bound to the constant rather than
+    # trusted to remember it. Both directions matter: the old version of this rule only failed when the
+    # constant was flipped under a document that still said false, so an AGENTS.md that simply omitted
+    # the claim -- leaving "Voice Packs Created: tara.cvpack" as the loudest sentence in the file --
+    # passed, and passing by silence is the failure mode this whole script was written against.
     lib = ROOT / "crates" / "vocal-core" / "src" / "lib.rs"
-    readme = ROOT / "README.md"
-    if lib.is_file() and readme.is_file():
-        m = re.search(r"REAL_SYNTHESIS_AVAILABLE[^=]*=\s*(?::\s*\w+\s*)?(:?\s*)?(true|false)", lib.read_text(encoding="utf-8"))
+    flag = None
+    if lib.is_file():
+        m = re.search(
+            r"REAL_SYNTHESIS_AVAILABLE[^=]*=\s*(?::\s*\w+\s*)?(:?\s*)?(true|false)",
+            lib.read_text(encoding="utf-8"),
+        )
         flag = m.group(2) if m else None
-        says_false = "REAL_SYNTHESIS_AVAILABLE` is `false" in readme.read_text(encoding="utf-8")
+    MARKER = "REAL_SYNTHESIS_AVAILABLE` is `false"
+    for doc in (ROOT / "README.md", ROOT / "AGENTS.md"):
+        if flag is None or not doc.is_file():
+            continue
+        says_false = MARKER in doc.read_text(encoding="utf-8")
+        if flag == "false" and not says_false:
+            problems.append(
+                f"{doc.name}: must carry the line `REAL_SYNTHESIS_AVAILABLE` is `false` (or the "
+                "placeholder-model sentence that replaces it) while crates/vocal-core/src/lib.rs says so. "
+                "Omitting the claim is not neutrality -- a reader fills the gap with the rest of the file."
+            )
         if flag == "true" and says_false:
             problems.append(
-                "README says REAL_SYNTHESIS_AVAILABLE is false, but crates/vocal-core/src/lib.rs "
-                "sets it true -- update the headline row in the same commit that flips the constant"
+                f"{doc.name} says REAL_SYNTHESIS_AVAILABLE is false, but crates/vocal-core/src/lib.rs "
+                "sets it true -- update the claim in the same commit that flips the constant"
+            )
+
+    # Rule 6: a root-level document whose *filename* asserts completion must be answered by a status
+    # banner in its first 12 lines. PHASE1_COMPLETE.md is why: it stood for a full sprint with a title
+    # that everybody repeated and a body that had never been run. The rule is about the name, not the
+    # body, because a corrected document is allowed to keep its falsified claims as history -- that is
+    # what the correction table is for, and rewriting history is its own way of losing the lesson.
+    for doc in sorted(ROOT.glob("[A-Z]*.md")):
+        if not re.search(r"COMPLETE|DONE|SHIPPED|PASSED|FINISHED|SUCCESS", doc.name, re.I):
+            continue
+        head = "\n".join(doc.read_text(encoding="utf-8").splitlines()[:12])
+        if not re.search(r"CORRECTION|STATUS:|NOT IMPLEMENTED|\u26a0\ufe0f", head):
+            problems.append(
+                f"{doc.name}: a filename that asserts completion must be answered in its first 12 lines "
+                "by a `CORRECTION` / `STATUS:` banner naming what is actually true"
             )
 
     if problems:
@@ -405,6 +445,29 @@ def self_test() -> int:
         (
             "stale PLANNED entry is caught",
             {"docs/notes.md": "# Notes\n", "tests/offline_test.rs": "// now it exists\n"},
+            1,
+        ),
+        (
+            "an agent-facing doc that omits the capability flag is caught",
+            {
+                **registry_stub,
+                "crates/vocal-core/src/lib.rs": "pub const REAL_SYNTHESIS_AVAILABLE: bool = false;\n",
+                "AGENTS.md": "# Guide\n\n- Voice packs created: tara.cvpack\n",
+            },
+            1,
+        ),
+        (
+            "an agent-facing doc that states the flag honestly is allowed",
+            {
+                **registry_stub,
+                "crates/vocal-core/src/lib.rs": "pub const REAL_SYNTHESIS_AVAILABLE: bool = false;\n",
+                "AGENTS.md": "# Guide\n\n- `REAL_SYNTHESIS_AVAILABLE` is `false`, so nothing can speak.\n",
+            },
+            0,
+        ),
+        (
+            "a root file named COMPLETE with no status banner is caught",
+            {**registry_stub, "PHASE2_COMPLETE.md": "# Phase 2 done\n\nAll tests pass.\n"},
             1,
         ),
     ]

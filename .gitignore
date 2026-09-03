@@ -2,8 +2,11 @@
 /target
 **/target
 
-# Cargo.lock is COMMITTED on purpose: this workspace builds binaries (the CLI),
-# so reproducible dependency resolution matters. Do not ignore it.
+# Cargo.lock is deliberately NOT ignored: this workspace builds binaries (the CLI), so reproducible
+# dependency resolution matters. The intent is stated here because the file is absent -- generating it
+# needs network to a registry the environment that produced this branch could not reach -- and an
+# earlier version of this comment claimed it was already committed, which was false. If it is ever
+# added to the ignore list, that is a decision to make loudly, not a line to slip in.
 
 # ─── Python (research + pack tooling) ───────────────────────────────
 __pycache__/
