@@ -16,6 +16,11 @@ python3 scripts/derive-persona-style.py --persona tara \
     --speed 1.0 --target-dbfs -21.0 --report --wav-out out.wav
 ```
 
+The raw measurements are committed as
+[`persona-survey.json`](./persona-survey.json) — 58 rows with the engine's sha256, the exact
+sentences, and the metric method — so §2 and §3 can be re-derived without re-running the survey, and
+any disagreement with this document is checkable against bytes.
+
 ## 1. Four of the five parameters in the persona specs do not exist
 
 `docs/personas/*.md` (from the PRD) give each voice a parameter table. This is what the engine
