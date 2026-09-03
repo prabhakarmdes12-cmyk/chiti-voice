@@ -1,0 +1,7 @@
+# Sample corpus for apps/sample-reader. These are phoneme strings, not orthography: the engine's
+# input is a phoneme sequence and this repository has no grapheme-to-phoneme converter in Rust.
+# See docs/research/KOKORO_OFFLINE_SPIKE.md for the Python path that produces strings like these.
+hələʊ wɜːld
+ˈtʃɪti ˈvəʊkəl rʌnˈtaɪm ɒn ðə dɪˈvaɪs
+gæʊ əˈweɪ ðɪs ˈɡʌf ɪz ˈæʃɪd ɪn ˈækʃən
+hɛləʊ ˈwɜːld əv ˈaʊdʒoʊ ɪz ˈhɪə tə riːd ðɪz ˈliːn ænd pleɪn ænd kaʊnt ðəm ˈɔːl əˈkeɪ

@@ -82,6 +82,8 @@ cargo run -p chiti-voice-cli --bin chiti-voice -- list
 cargo run -p chiti-voice-cli --bin chiti-voice -- verify voice-packs/dist/tara.cvpack
 cargo run -p chiti-voice-cli --bin chiti-voice -- install voice-packs/dist/tara.cvpack --allow-placeholder
 cargo run -p chiti-voice-cli --bin chiti-voice -- speak --voice tara "Hello, world!" --allow-silence
+# The sample consumer: loads a shipped pack, applies its chunking policy, plans, renders.
+cargo run -p chiti-sample-reader -- --lines apps/sample-reader/fixtures/lines.txt --out /tmp/sample.wav
 ```
 
 Voice packs are built and verified with the pack tooling (checksums must always be
@@ -130,6 +132,7 @@ chiti-voice/
 | `crates/vocal-core` | `VoiceEngine` trait, engine registry, `MockEngine` (silence), `PiperEngine` (unimplemented), personas, state machine, error codes, WAV encoding |
 | `crates/voice-pack` | `.cvpack` container: manifest schema, size/rate-limited loader, security validator |
 | `apps/chiti-voice-cli` | `speak`, `list`, `verify`, `status`, `install`, `version` |
+| `apps/sample-reader` | A minimal integrator-style consumer, run end-to-end in CI to prove the public API is enough |
 | `voice-packs/{tara,kashi,bobo}` | Persona manifests (no models) |
 | `docs/architecture` | System overview, invariants, state machine, security, privacy, ADR-001 |
 | `docs/api` | HTTP + TypeScript SDK **specifications** (not implemented) |

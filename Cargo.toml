@@ -3,6 +3,7 @@ members = [
     "crates/vocal-core",
     "crates/voice-pack",
     "apps/chiti-voice-cli",
+    "apps/sample-reader",
 ]
 resolver = "2"
 

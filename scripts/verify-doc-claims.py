@@ -77,7 +77,7 @@ PLANNED: dict[str, str] = {
     "docs/CVPACK_SPECIFICATION.md": "documented as a planned companion to the .cvpack format",
 }
 
-SKIP_DIRS = {".git", "target", "node_modules", ".cargo", "dist"}
+SKIP_DIRS = {".git", "target", "node_modules", ".cargo"}
 
 
 def canonical_invariants() -> tuple[dict[str, str], list[str]]:
@@ -125,14 +125,36 @@ def cited_invariants(text: str):
 
 
 def tracked_files() -> list[Path]:
+    """The files the repository actually ships.
+
+    `git ls-files` is the right oracle, not a directory walk. This repo *tracks* `voice-packs/dist/`,
+    which a walk has to skip as a build output -- and the first version of this script did skip every
+    path containing a directory named `dist`, then reported the shipped `.cvpack` files as missing. A
+    gate that invents findings is worse than no gate, because it trains people to ignore it; it nearly
+    trained me to add a PLANNED exception for a file that exists. Falls back to a walk when git is
+    unavailable or lists nothing (a source tarball, the self-test's temp tree).
+    """
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(ROOT), "ls-files"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+    except Exception:
+        out = ""
+    listed = [Path(line) for line in out.splitlines() if line.strip()]
+    if listed:
+        return [rel for rel in listed if (ROOT / rel).is_file()]
+
     files = []
-    for p in ROOT.rglob("*"):
-        if not p.is_file():
+    for candidate in ROOT.rglob("*"):
+        if not candidate.is_file():
             continue
-        rel_parts = p.relative_to(ROOT).parts
-        if any(part in SKIP_DIRS for part in rel_parts):
+        rel = candidate.relative_to(ROOT)
+        if any(part in SKIP_DIRS for part in rel.parts):
             continue
-        files.append(p.relative_to(ROOT))
+        files.append(rel)
     return files
 
 

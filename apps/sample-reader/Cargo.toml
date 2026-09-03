@@ -1,0 +1,18 @@
+[package]
+name = "chiti-sample-reader"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "A minimal integrator-style consumer of vocal-core and voice-pack, used to test the public API from outside the crates that define it."
+
+[[bin]]
+name = "sample_reader"
+path = "src/main.rs"
+
+# No clap, no anyhow: a sample project should show the calls an integrator writes, not hide them
+# behind a derive, and every dependency here is one they would also need.
+[dependencies]
+vocal-core = { path = "../../crates/vocal-core" }
+voice-pack = { path = "../../crates/voice-pack" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

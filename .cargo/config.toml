@@ -1,0 +1,6 @@
+# TEMPORARY -- one CI cycle only. This slice adds a whole new crate (binary + integration tests) written in a sandbox
+# with no Rust toolchain, so a compile error would otherwise arrive as a red job with no text in it.
+# The wrapper turns rustc/clippy diagnostics into check-run annotations; Windows runners cannot exec a
+# bash script, so that leg goes red meanwhile and this file is deleted in the follow-up commit.
+[build]
+rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"
