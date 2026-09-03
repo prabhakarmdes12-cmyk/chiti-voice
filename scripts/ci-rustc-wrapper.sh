@@ -39,6 +39,7 @@ if [ -w "$log" ]; then
     touch /tmp/ci-rustc-wrapper-alive
     printf '::error::rustc-wrapper channel is alive (annotations from this job are CI log excerpts, not test failures)\n' >> "$log"
   fi
+  if [ "$rc" -eq 0 ]; then exit 0; fi
   crate="$(printf '%s\n' "$@" | sed -nE 's/^--crate-name$//p;T;N;s/.*\n//p' | head -1)"
   [ -n "$crate" ] || crate="$(printf '%s' "$*" | grep -oE '\-\-crate-name [a-z_0-9]+' | head -1 | awk '{print $2}')"
   block="$(jq -Rr 'fromjson? | select(.reason=="compiler-message") | select(.message.level=="error")
