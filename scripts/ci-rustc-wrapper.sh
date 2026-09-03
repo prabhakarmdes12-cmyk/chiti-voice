@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 # Temporary CI helper: make `cargo` failures readable from this sandbox.
 #
-# Why: the dev sandbox has no Rust toolchain and cannot reach any rustup/crates.io mirror, while
-# GitHub's job-log endpoints redirect to a blob store that is unreachable from here too. So every
-# compile error came back as the single annotation "Process completed with exit code 101" — enough to
-# know a build broke, not enough to know why. Cargo invokes this wrapper *instead of* rustc (as
-# `wrapper rustc <args…>`), so it can re-emit rustc's own diagnostics as `::error::` workflow commands,
-# which DO become check-run annotations readable via `gh api .../check-runs/<id>/annotations`.
+# Why: no Rust toolchain here, no reachable rustup/crates.io mirror, and GitHub's job-log endpoints
+# redirect to a blob store this sandbox cannot read — so a compile error arrives as nothing but
+# "Process completed with exit code 101". Cargo's rustc-wrapper is a hook that lives in ordinary repo
+# files (this repo's GitHub App may not touch .github/workflows), and it lets rustc's diagnostics be
+# re-emitted as `::error::` workflow commands, which DO show up as check-run annotations.
 #
-# Outside CI it is a transparent pass-through, so nobody's local build changes. Delete this file and
-# the `[build] rustc-wrapper` line in `.cargo/config.toml` once they are no longer needed — the point is
-# a readable oracle for commits written without a compiler, not a permanent gate.
+# Two details that cost a CI cycle each to learn:
+#   * cargo captures the wrapper's stdout to parse rustc output, so the annotations must go to the
+#     *inherited* log fd (`/proc/$PPID/fd/1`), not to this process's stdout;
+#   * GitHub only promotes `::error::` when it starts a line, so each block is flattened onto one line.
+#
+# Outside CI this is a transparent pass-through. Delete this file and the `[build] rustc-wrapper` line
+# in `.cargo/config.toml` once it has done its job.
 
 set -u
 
-# Cargo's wrapper protocol: the first argument is the compiler, the rest are its arguments.
 if [ "$#" -lt 1 ]; then
-  echo "ci-rustc-wrapper: expected 'rustc <args…>', got nothing" >&2
+  echo "ci-rustc-wrapper: expected 'rustc <args…>'" >&2
   exit 2
 fi
 
@@ -27,23 +29,20 @@ fi
 tmp="$(mktemp)"
 "$@" >"$tmp" 2>&1
 rc=$?
-
 cat "$tmp"
 
-# Annotate rustc's error headers plus the `--> file:line:col` line under each, which is where the
-# path actually lives. Filter to this repo's sources so dependency noise cannot drown the signal.
-grep -E -A1 '^error' "$tmp" \
-  | grep -E 'crates/|apps/' \
-  | head -n 12 \
-  | while IFS= read -r line; do
-      printf '::error::%s\n' "${line//'%'/'%25'}"
-    done
-
-# Fallback for the case where rustc wrote the message and the location on lines that did not both match.
-if ! grep -qE '^error.*crates/|^error.*apps/|-->.+(crates|apps)/' "$tmp"; then
-  grep -E '^(error|warning: unused|  -->)' "$tmp" | head -n 10 | while IFS= read -r line; do
-    printf '::error::%s\n' "${line//'%'/'%25'}"
-  done
+log="/proc/$PPID/fd/1"
+if [ -w "$log" ]; then
+  # One liveness marker per runner, so a green-looking empty annotation list can be told apart from a
+  # wrapper that never ran.
+  if [ ! -f /tmp/ci-rustc-wrapper-alive ]; then
+    touch /tmp/ci-rustc-wrapper-alive
+    printf '::error::rustc-wrapper channel is alive (annotations from this job are CI log excerpts, not test failures)\n' >> "$log"
+  fi
+  block="$(grep -E -A3 '^error' "$tmp" | head -n 20 | tr '\n' '|' | sed -e 's/%/%25/g' -e 's/\x1b\[[0-9;]*m//g')"
+  if [ -n "$block" ]; then
+    printf '::error::%s\n' "${block:0:6000}" >> "$log"
+  fi
 fi
 
 rm -f "$tmp"
