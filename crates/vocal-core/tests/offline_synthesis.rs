@@ -370,6 +370,41 @@ fn walk(dir: &str) -> Vec<String> {
     out
 }
 
+// Prelude for the temporary persona-rules periscope below. ASCII only on purpose: literal IPA in
+// a generated file is how this project grew a mojibake bug, so the one case that compares against
+// it spells its codepoints out and the assertion proves the decoder did too.
+const IPA_CHITI: &str = "\u{02C8}t\u{0283}\u{026A}ti";
+
+const FILES_ONE: &str = r#"[{"path":"model.onnx","checksum_sha256":"0000000000000000000000000000000000000000000000000000000000000000","size_bytes":10,"file_type":"model"}]"#;
+const FILES_TWO: &str = r#"[{"path":"model.onnx","checksum_sha256":"0000000000000000000000000000000000000000000000000000000000000000","size_bytes":10,"file_type":"model"},{"path":"persona.bin","checksum_sha256":"1111111111111111111111111111111111111111111111111111111111111111","size_bytes":522240,"file_type":"style_vector"}]"#;
+const FILES_TRUNC: &str = r#"[{"path":"model.onnx","checksum_sha256":"0000000000000000000000000000000000000000000000000000000000000000","size_bytes":10,"file_type":"model"},{"path":"persona.bin","checksum_sha256":"1111111111111111111111111111111111111111111111111111111111111111","size_bytes":522239,"file_type":"style_vector"}]"#;
+const FILES_WRONGTYPE: &str = r#"[{"path":"model.onnx","checksum_sha256":"0000000000000000000000000000000000000000000000000000000000000000","size_bytes":10,"file_type":"model"},{"path":"persona.bin","checksum_sha256":"1111111111111111111111111111111111111111111111111111111111111111","size_bytes":522240,"file_type":"config"}]"#;
+
+/// A persona block with exactly one legal style source, so that the rule a case is testing is the
+/// only thing that can reject it. `tail` is spliced in before the closing brace, and JSON's
+/// last-key-wins rule lets a case override any field above it without repeating the rest.
+///
+/// Braces are written singly and no `format!` is used anywhere below: an interpolation template and
+/// a JSON literal sharing one string is how the first version of this harness shipped a compile
+/// error, which the compiler here cannot see.
+fn with_style(tail: &str) -> String {
+    let base = r#"{"id":"tara","display_name":"Tara","description":"d","default_rate":1.0,"default_pitch":0.0,"intent_profiles":{},"pitch_baked_into_style":false,"style":{"source_voice":"af_heart"}TAIL}"#;
+    let extra = if tail.is_empty() { String::new() } else { String::from(",") + tail };
+    base.replace("TAIL", &extra)
+}
+
+fn without_style(tail: &str) -> String {
+    let base = r#"{"id":"tara","display_name":"Tara","description":"d","default_rate":1.0,"default_pitch":0.0,"intent_profiles":{},"pitch_baked_into_style":falseTAIL}"#;
+    let extra = if tail.is_empty() { String::new() } else { String::from(",") + tail };
+    base.replace("TAIL", &extra)
+}
+
+fn manifest(persona: &str, files: &str, placeholder: bool) -> String {
+    let status = if placeholder { String::new() } else { String::from(r#", "status":"release"#) };
+    let base = r#"{"format_version":1,"voice_id":"probe.tara","name":"Probe","language":"en-us","engine_family":"piper","sample_rate":24000,"files":[@F@],"license":"MIT","attribution":"a","model_architecture":"ktdh","persona":@P@@S@}"#;
+    base.replace("@F@", files).replace("@P@", persona).replace("@S@", &status)
+}
+
 #[test]
 fn ci_probe_persona_rules() {
     // (label, persona json, files json, placeholder?, expected substring of the error / "" == expect Ok)
