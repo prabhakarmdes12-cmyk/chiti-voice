@@ -275,7 +275,13 @@ mod tests {
         assert_eq!(scale_to_i16(0.5, 1.0), 16383);
         assert_eq!(scale_to_i16(-0.5, 1.0), -16384);
         assert_eq!(scale_to_i16(1.0, 1.0), 32767);
-        assert_eq!(scale_to_i16(-1.0, 1.0), -32768);
+        // Not -32768. `-1.0 * 32767` is exactly -32767.0 and flooring leaves it there, so the
+        // bottom rail is unreachable from in-range audio: only an *out-of-range* sample (below
+        // -1.0) clamps onto it. The reference behaves the same way, which the `edge_values`
+        // fixture in tests/fixtures/kokoro/dsp_parity.json already recorded — this assertion is
+        // the one place the intuition got written down before the number was checked, and CI
+        // caught it: 44 passed, 1 failed, and the failing one was the guess.
+        assert_eq!(scale_to_i16(-1.0, 1.0), -32767);
         assert_eq!(scale_to_i16(8.0, 1.0), 32767);
         assert_eq!(scale_to_i16(-8.0, 1.0), -32768);
         // Below one LSB there is nothing to encode; flooring must not invent a sample.
