@@ -1,6 +1,11 @@
-# TEMPORARY -- one CI cycle only. This slice adds a whole new crate (binary + integration tests) written in a sandbox
-# with no Rust toolchain, so a compile error would otherwise arrive as a red job with no text in it.
-# The wrapper turns rustc/clippy diagnostics into check-run annotations; Windows runners cannot exec a
-# bash script, so that leg goes red meanwhile and this file is deleted in the follow-up commit.
+# TEMPORARY -- one CI cycle only. Adds a new crate (binary + integration tests) written without a Rust
+# toolchain. Build and clippy came back green but a Unit Tests assertion failed with no annotation, and
+# cargo test output is unreachable from this sandbox -- so the rustc wrapper alone cannot show a panic.
+# These two hooks turn compiler diagnostics AND failing-test output into check-run annotations, the only
+# readable channel. Windows cannot exec the bash/sh scripts, so that leg goes red meanwhile; all four
+# files here are deleted in the follow-up commit.
 [build]
 rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"
+
+[target.x86_64-unknown-linux-gnu]
+runner = "./scripts/ci-test-capture.sh"
