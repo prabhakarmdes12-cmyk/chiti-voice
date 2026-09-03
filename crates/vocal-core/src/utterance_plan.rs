@@ -443,11 +443,28 @@ mod tests {
         assert_eq!(one.len(), 1, "the default ceiling holds a sentence of this size");
         assert!(many.len() > 1, "a tighter one splits it");
         assert_ne!(one.style_rows(), many.style_rows());
+        // The row is the *graph's* length, not the caller's. This sentence loses a character on the
+        // way in: its `g` is not in the 178-symbol table (Kokoro's vocab carries U+0261 script-g
+        // instead), so `strip_to_vocab` drops it and the two totals differ by exactly one. Asserting
+        // the relationship rather than a constant keeps the test true if the table is ever regenerated,
+        // and asserting the difference keeps it from being silently re-earned by a future "cleanup".
+        let typed: usize =
+            pieces.iter().map(|p| p.phonemes.chars().count()).sum::<usize>() + pieces.len() - 1;
+        let graphed: usize = pieces
+            .iter()
+            .map(|p| strip_to_vocab(&p.phonemes).chars().count())
+            .sum::<usize>()
+            + pieces.len()
+            - 1;
         assert_eq!(
             one.style_rows()[0],
-            pieces.iter().map(|p| p.phonemes.chars().count()).sum::<usize>()
-                + pieces.len() - 1,
+            graphed,
             "one chunk reads the row for the whole sentence -- the row is the length, nothing else"
+        );
+        assert_eq!(
+            typed - graphed,
+            1,
+            "the sentence must still straddle the filter, or this test stopped proving the budget is counted after it"
         );
     }
 

@@ -1,7 +1,0 @@
-# TEMPORARY -- one CI cycle only. Scripts `scripts/ci-rustc-wrapper.sh` so that rustc diagnostics from
-# the jobs which build `#[cfg(test)]` code arrive as check-run annotations: this sandbox has no Rust
-# toolchain and cannot read Actions logs, so an otherwise-unexplained red job becomes readable.
-# The Windows legs cannot exec a bash script and WILL go red while this file exists, so it is deleted in
-# the very next commit, whether or not the fix it enabled is finished.
-[build]
-rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"
