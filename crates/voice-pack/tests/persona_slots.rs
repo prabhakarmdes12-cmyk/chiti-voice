@@ -63,18 +63,49 @@ fn pack(persona: &str, files: &str) -> PackManifest {
 /// every loudness/pronunciation case in this file failed on "declare persona.style" instead — which is
 /// exactly what the local mirror of these rules caught, since CI reports an assertion failure as
 /// nothing but a red job.
+/// Splices a case's fields into the shared persona object as *data*, so a key appears exactly once.
+///
+/// The first version appended the case's fragment to the shared one and relied on JSON's
+/// last-key-wins. That is how Python's `json.loads` behaves; it is NOT how serde's derived
+/// `Deserialize` behaves -- a repeated field is a hard error, `duplicate field `style``. So the eight
+/// cases that overrode `style`, `default_pitch` or `intent_profiles` died in the parser and never
+/// reached the rule they were written to test, while a local mirror of these fixtures in Python showed
+/// nothing wrong. Merging a map is the fix; the mirror is the lesson.
+fn merge(base: &str, extra: &str) -> String {
+    // Fragments are written as field lists (and some still carry the leading comma they needed when
+    // they were spliced into text), so close them into an object before parsing.
+    let extra = extra.trim().trim_start_matches(',').trim();
+    let mut obj: serde_json::Map<String, serde_json::Value> = serde_json::from_str(base)
+        .unwrap_or_else(|e| panic!("shared fixture object must be valid JSON ({e}):\n{base}"));
+    let over: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&format!("{{{extra}}}"))
+            .unwrap_or_else(|e| panic!("a case's override must be a list of JSON fields ({e}):\n{extra}"));
+    for (key, value) in over {
+        obj.insert(key, value);
+    }
+    serde_json::to_string(&obj).unwrap_or_else(|e| panic!("merging cannot fail to serialise: {e}"))
+}
+
+/// The persona fields every fixture shares, plus whatever the case under test adds.
+///
+/// `style` is part of the shared set because the validator reports it first: a fixture asserting that
+/// a bad `loudness` block is rejected only proves the rule if the pack is otherwise loadable. A case
+/// re-declares any field it wants to change, and `merge` makes that an override instead of a
+/// duplicate.
 fn persona(inner: &str) -> String {
-    format!(
-        r#"{{ "id": "tara", "display_name": "Tara", "description": "warm, professional",
-             "default_rate": 1.0, "default_pitch": 0.0, "intent_profiles": {{}},
-             "style": {{ "source_voice": "af_heart" }}, {inner} }}"#
+    merge(
+        r#"{ "id": "tara", "display_name": "Tara", "description": "warm, professional",
+             "default_rate": 1.0, "default_pitch": 0.0, "intent_profiles": {},
+             "style": { "source_voice": "af_heart" } }"#,
+        inner,
     )
 }
 
 fn persona_no_style(inner: &str) -> String {
-    format!(
-        r#"{{ "id": "tara", "display_name": "Tara", "description": "warm, professional",
-             "default_rate": 1.0, "default_pitch": 0.0, "intent_profiles": {{}}{inner} }}"#
+    merge(
+        r#"{ "id": "tara", "display_name": "Tara", "description": "warm, professional",
+             "default_rate": 1.0, "default_pitch": 0.0, "intent_profiles": {} }"#,
+        inner,
     )
 }
 
@@ -367,6 +398,7 @@ fn the_new_file_types_parse_and_an_unknown_one_does_not() {
 // The hook is process-global, so with tests on several threads a payload can be attributed to the
 // wrong name; the pass/fail verdicts come from `catch_unwind` and stay exact. Delete this whole block
 // once `Unit Tests` is green -- a periscope left in a gate job is just another way to be red.
+#[allow(clippy::all)] // temporary harness: its plumbing is not the code under review
 #[test]
 fn ci_probe_which_test_fails() {
     let cases: [(&str, fn()); 11] = [
