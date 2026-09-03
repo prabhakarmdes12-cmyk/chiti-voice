@@ -31,6 +31,14 @@ const TEMPLATE: &str = r#"{
 
 const PLACEHOLDER: &str = ", \"status\": \"placeholder\"";
 
+/// The IPA string the three shipped packs declare for "Chiti", written as escapes so no transport
+/// encoding can damage it. An earlier revision of this file carried the mojibake of exactly this value
+/// (`\u{00cb}\u{02c6}...` where `\u{02c8}...` was meant), and nothing rejected it: the validator's rules
+/// for an override are "single-word key, non-blank value under 256 bytes", because IPA validity is the
+/// tokenizer table's business, not the manifest's. So a mangled value is *representable* — which is why
+/// the test below asserts the round trip byte for byte instead of trusting the file.
+const IPA_CHITI: &str = "@IPA@";
+
 fn from_json(persona: &str, files: &str, status: &str) -> PackManifest {
     let json = TEMPLATE
         .replace("@persona@", persona)
@@ -274,10 +282,16 @@ fn loudness_limits_are_bounded_by_what_a_speaker_can_take() {
 
 #[test]
 fn pronunciations_are_single_words_with_something_to_say() {
-    let good = persona(r#""pronunciation_overrides": {"chiti": "ËˆtÊƒÉªti"}"#);
-    pack(&good, MODEL_ONLY)
+    let good = persona(&format!(r#""pronunciation_overrides": {{ "chiti": "{IPA_CHITI}" }}"#));
+    let parsed = pack(&good, MODEL_ONLY);
+    parsed
         .validate_persona()
         .expect("the override that fixes the product's own name");
+    assert_eq!(
+        parsed.persona.as_ref().expect("persona").pronunciation_overrides["chiti"],
+        IPA_CHITI,
+        "the IPA a pack declares must be the IPA the loader hands back, byte for byte"
+    );
 
     let phrase = persona(r#""pronunciation_overrides": {"new delhi": "njuː dɛlhi"}"#);
     assert!(err_of(phrase, MODEL_ONLY).contains("single non-empty word"));

@@ -1,4 +1,0 @@
-# TEMPORARY (see scripts/ci-rustc-wrapper.sh): lets rustc errors reach this sandbox as check-run annotations.
-# Outside CI the wrapper is a pass-through, so local builds are unaffected.
-[build]
-rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"
