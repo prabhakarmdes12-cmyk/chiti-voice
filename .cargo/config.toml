@@ -1,0 +1,11 @@
+# TEMPORARY — CI diagnostics only. DELETE THIS FILE once the workspace is green.
+# See scripts/ci-rustc-capture.sh and scripts/ci-test-capture.sh for why they exist.
+
+[build]
+# Relative path: resolved against the cargo invocation directory, which is the repo root in
+# every job. Works on the Linux and macOS runners; Windows cannot exec a /bin/sh script, so
+# the windows jobs are masked while this file exists — one more reason it must not survive.
+rustc-wrapper = "scripts/ci-rustc-capture.sh"
+
+[target.x86_64-unknown-linux-gnu]
+runner = "scripts/ci-test-capture.sh"
