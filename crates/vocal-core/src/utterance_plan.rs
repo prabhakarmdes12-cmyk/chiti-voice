@@ -277,7 +277,7 @@ mod tests {
     /// Vocab-safe ASCII phoneme-ish runs: every character here is in `SYMBOLS`, so `units` is the
     /// literal character count and the expectations below are checkable by hand.
     fn words(text: &str) -> Vec<Piece> {
-        text.split_whitespace().map(|word| Piece::phonemes(word)).collect()
+        text.split_whitespace().map(Piece::phonemes).collect()
     }
 
     #[test]

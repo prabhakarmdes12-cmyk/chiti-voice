@@ -384,12 +384,12 @@ fn walk(dir: &str) -> Vec<String> {
 #[allow(clippy::all)]
 #[test]
 fn ci_probe_utterance_plan() {
-    use vocal_core::phoneme_tokens::{encode, strip_to_vocab, MAX_TOKENS};
+    use vocal_core::phoneme_tokens::{encode, strip_to_vocab, MAX_PHONEME_UNITS, MAX_TOKENS};
     use vocal_core::utterance_plan::{plan_pieces, Piece, PlanPolicy, Utterance, DEFAULT_MAX_UNITS};
     use vocal_core::VoiceErrorCode;
 
     fn words(text: &str) -> Vec<Piece> {
-        text.split_whitespace().map(|word| Piece::phonemes(word)).collect()
+        text.split_whitespace().map(Piece::phonemes).collect()
     }
 
     macro_rules! scenario {
