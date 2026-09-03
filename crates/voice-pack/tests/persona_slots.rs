@@ -46,12 +46,20 @@ fn pack(persona: &str, files: &str) -> PackManifest {
 
 /// The persona fields every fixture shares, plus whatever the case under test adds.
 ///
-/// A case may re-declare a key it wants to override (e.g. `default_pitch`); serde's last-value-wins
-/// for duplicate keys is what makes the template composable without a builder per field.
+/// A case may re-declare a key it wants to override (e.g. `default_pitch`, or `style` itself);
+/// serde's last-value-wins for duplicate keys is what makes the template composable without a builder
+/// per field.
+///
+/// `style` is in the shared part because the validator reports it first: a fixture asserting that a
+/// bad `loudness` block is rejected only proves the rule if the pack is otherwise loadable. Without it
+/// every loudness/pronunciation case in this file failed on "declare persona.style" instead — which is
+/// exactly what the local mirror of these rules caught, since CI reports an assertion failure as
+/// nothing but a red job.
 fn persona(inner: &str) -> String {
     format!(
         r#"{{ "id": "tara", "display_name": "Tara", "description": "warm, professional",
-             "default_rate": 1.0, "default_pitch": 0.0, "intent_profiles": {{}}, {inner} }}"#
+             "default_rate": 1.0, "default_pitch": 0.0, "intent_profiles": {{}},
+             "style": {{ "source_voice": "af_heart" }}, {inner} }}"#
     )
 }
 
