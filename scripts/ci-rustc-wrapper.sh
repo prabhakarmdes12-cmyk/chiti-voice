@@ -42,9 +42,10 @@ if [ -w "$log" ]; then
   if [ "$rc" -eq 0 ]; then exit 0; fi
   crate="$(printf '%s\n' "$@" | sed -nE 's/^--crate-name$//p;T;N;s/.*\n//p' | head -1)"
   [ -n "$crate" ] || crate="$(printf '%s' "$*" | grep -oE '\-\-crate-name [a-z_0-9]+' | head -1 | awk '{print $2}')"
-  block="$(jq -Rr 'fromjson? | select(.reason=="compiler-message") | select(.message.level=="error")
-                  | "\(.message.spans[0].file_name // "?"):\(.message.spans[0].line_start // 0) \(.message.code.code // "error") \(.message.message)"' \
-             "$tmp" 2>/dev/null | head -n 10 | tr '\n' '|')"
+  block="$(jq -Rr 'fromjson? | select(."$message_type"=="diagnostic") | select(.level=="error")
+                  | "\(.spans[0].file_name // "?"):\(.spans[0].line_start // 0):\(.spans[0].line_end // 0) [\(.code.code // "error")] \(.message) :: " +
+                    ([(.children[]? | select(.level=="note") | .message)][:2] | join(" ; "))' \
+             "$tmp" 2>/dev/null | head -n 12 | tr '\n' '|')"
   if [ -z "$block" ]; then
     # No compiler message at all: then whatever the child DID say is the finding (a cargo-level error,
     # a linker failure, or a rustc that died before emitting JSON). Annotate the tail of it.

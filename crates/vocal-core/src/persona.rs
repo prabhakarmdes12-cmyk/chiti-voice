@@ -123,7 +123,9 @@ pub struct IntentProfile {
 /// Three fields, because three is what can be honoured: `speed` reaches the graph, `loudness_target`
 /// reaches the gain stage, `pause_factor` reaches the silence inserter. Pitch is absent by design —
 /// see the module docs.
-#[derive(Debug, Clone, Copy, PartialEq)]
+// No `Copy`: `intent` is a String, and the point of carrying it is to hand a log a name, not to be
+// cheap to pass around. (Deriving `Copy` here was E0204: `Option<String>` is not `Copy`.)
+#[derive(Debug, Clone, PartialEq)]
 pub struct Prosody {
     /// The graph's `speed` scalar.
     pub speed: f32,

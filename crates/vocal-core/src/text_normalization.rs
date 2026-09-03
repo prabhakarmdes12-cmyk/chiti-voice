@@ -74,7 +74,7 @@ pub fn split_for_overrides(text: &str, overrides: &HashMap<String, String>) -> V
         // the core, so `\u{091A}chiti\u{0902}` would look like the bare token `chiti` and get rewritten. In a
         // product whose input is Hindi and Tamil, an ASCII-only notion of "word character" is a bug,
         // and it must disagree with the punctuation rule below in exactly zero places.
-        let key: String = word.chars().filter(char::is_alphanumeric).collect();
+        let key: String = word.chars().filter(|c| c.is_alphanumeric()).collect();
         match overrides.get(&key.to_ascii_lowercase()).or_else(|| {
             overrides
                 .iter()
