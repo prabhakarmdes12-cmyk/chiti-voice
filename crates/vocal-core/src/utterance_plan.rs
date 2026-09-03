@@ -116,8 +116,12 @@ impl Piece {
         Self { phonemes: value.into(), is_override: true }
     }
 
-    /// Tokens this run occupies once the vocabulary filter has had its say: the count the graph sees,
-    /// not the count the caller typed.
+    /// Tokens this run occupies once the vocabulary filter has had its say: the count *this crate's*
+    /// `encode` produces, not the count the caller typed.
+    ///
+    /// It tracks `encode` on purpose. If that function learns the upstream behaviour -- an unmapped
+    /// character becoming a `PAD` token instead of vanishing, see `phoneme_tokens::id_for` -- this
+    /// becomes one short per affected character, and both have to change together.
     #[must_use]
     pub fn units(&self) -> usize {
         strip_to_vocab(&self.phonemes).chars().count()

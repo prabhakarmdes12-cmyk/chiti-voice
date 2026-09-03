@@ -72,9 +72,18 @@ pub const SYMBOLS: &[char; 178] = &[
     '\0', '\u{1d7b}',
 ];
 
-/// Look up a character's id. `None` for anything outside the vocab; callers map those to
-/// [`PAD`], which is what the reference does (`vocab.get(c, pad)`) — i.e. an unmapped character
-/// becomes a pad token rather than an error, and this API keeps that behaviour visible.
+/// Look up a character's id. `None` for anything outside the vocab.
+///
+/// The upstream pipeline maps an unmapped character to `pad` instead (`vocab.get(c, pad)`): the
+/// character becomes a [`PAD`] *token*, keeping the sequence's length. This crate's [`encode`] does
+/// not — it filters such characters out first, so the sequence is shorter.
+///
+/// That is not cosmetic, because the style row is selected by token count: one dropped character shifts
+/// the row as well as removing a sound. `tests/kokoro_tokens.rs` holds the consequence in check for the
+/// reference fixtures (it asserts they need no stripping at all, so `encode` cannot have diverged from
+/// the run that produced them), and nothing here makes the general case faithful. Either `encode` learns
+/// the `pad` behaviour, or this divergence gets a name and a reason. What it must not keep is a doc
+/// comment claiming the two agree.
 pub fn id_for(ch: char) -> Option<u16> {
     // Linear scan: ids are sparse and the table is short (178), so a full 512-token utterance
     // costs ~90k comparisons — noise against an inference budget measured in seconds.
@@ -82,6 +91,9 @@ pub fn id_for(ch: char) -> Option<u16> {
 }
 
 /// Drop every character the vocabulary does not contain (the whitelist's equivalent, §2 above).
+///
+/// Deliberately not what upstream does with an unmapped character — see [`id_for`] for the consequence,
+/// which lands on [`encode`]'s output length and therefore on [`style_row`].
 pub fn strip_to_vocab(phonemes: &str) -> String {
     phonemes.chars().filter(|c| id_for(*c).is_some()).collect()
 }
@@ -136,6 +148,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_unmapped_character_costs_a_token_upstream_and_none_here() {
+        // "d-u-with-script-g, u, space, ASCII g": the last character is not in the table, so `encode`
+        // emits one id fewer than the reference would (which keeps it as PAD), and `n_tokens` -- the
+        // style row -- is short by the same one. Numbers rather than prose, because "one character" is
+        // exactly the size of a bug that a later simplification of `strip_to_vocab` would erase.
+        let input = "d\u{0261}u g";
+        let ids = encode(input);
+        assert_eq!(
+            ids.len(),
+            input.chars().count() - 1 + 2,
+            "the unmapped 'g' is dropped, so the sequence is one shorter than the caller's characters"
+        );
+        assert_eq!(
+            n_tokens(&ids) + 1,
+            input.chars().count(),
+            "and the row index is short by the same one, which is why this is audible, not internal"
+        );
+    }
+
+    #[test]
     fn table_is_sparse_exactly_as_documented() {
         let used = SYMBOLS.iter().filter(|c| **c != '\0').count();
         assert_eq!(used, 115, "the measured vocab is 115 symbols");
@@ -144,6 +176,14 @@ mod tests {
         assert_eq!(SYMBOLS[PAD as usize], '$');
         assert!(used < SYMBOLS.len(), "if the ids ever become dense, the comment above is a lie");
         assert!(id_for('\u{26a1}').is_none(), "a symbol outside the vocab must not map");
+
+        // The table carries U+0261 (script-g), not ASCII 'g' -- which is what a phonemiser emitting
+        // plain IPA produces for /g/. Budgeting and encoding both rest on that asymmetry, so it is
+        // asserted rather than assumed: the alternative is silently losing every 'g' in a language.
+        assert!(
+            id_for('g').is_none() && id_for('\u{0261}').is_some(),
+            "the vocab has script-g only; an espeak-style IPA 'g' is an unmapped character"
+        );
     }
 
     #[test]
