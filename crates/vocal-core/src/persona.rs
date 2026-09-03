@@ -94,7 +94,7 @@ impl Persona {
     /// design -- IPA validity is the tokenizer's business), and `docs`/`README` claimed the values "are
     /// checked for encodability in `vocal-core`": this is that check, so the claim is true and the load
     /// path has one place to call it from.
-    #[must_use]
+    #[must_use = "the returned error is the only signal that a pack's declared pronunciation cannot be synthesized"]
     pub fn check_overrides_encodable(&self) -> crate::error::VoiceResult<()> {
         let mut offenders: Vec<(String, Vec<char>)> = Vec::new();
         for (word, phonemes) in &self.pronunciation_overrides {
