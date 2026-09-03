@@ -164,10 +164,14 @@ def main() -> int:
                 target = model_path
             elif name == "package/build/tokenizer.json":
                 target = tok_path
-            elif want_voices is None and name.startswith("package/build/voices/") and name.endswith(".bin"):
+            elif name.startswith("package/build/voices/") and name.endswith(".bin") and (
+                want_voices is None or name in want_voices
+            ):
+                # --all-voices sets want_voices to None; test that *before* membership, because
+                # `name in None` is a TypeError and this branch is only reachable with the flag on.
                 target = dest / "voices" / Path(name).name
-            elif name in want_voices:
-                target = dest / "voices" / Path(name).name
+            else:
+                target = None
             if target is None:
                 continue
             target.parent.mkdir(parents=True, exist_ok=True)
