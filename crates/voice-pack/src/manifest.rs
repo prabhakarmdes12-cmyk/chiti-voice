@@ -373,7 +373,7 @@ impl PackManifest {
                 return Ok(());
             }
             return Err(
-                "a release pack must declare persona.style (source_voice, blend, or embedded_file): without it the engine has no idea which 256 floats make this persona, and "the default voice" is how a persona silently becomes somebody else"
+                "a release pack must declare persona.style (source_voice, blend, or embedded_file): without it the engine has no idea which 256 floats make this persona, and \"the default voice\" is how a persona silently becomes somebody else"
                     .to_string(),
             );
         };
@@ -422,7 +422,7 @@ impl PackManifest {
                 }
                 sum += f64::from(term.weight);
             }
-            if (sum - 1.0).abs() > BLEND_WEIGHT_SUM_TOLERANCE as f64 {
+            if (sum - 1.0).abs() > f64::from(BLEND_WEIGHT_SUM_TOLERANCE) {
                 return Err(format!(
                     "persona.style.blend weights sum to {sum:.6}, expected 1.0: the blend is an interpolation of style rows, so a sum above or below 1 changes loudness and register by accident (re-derive with scripts/derive-persona-style.py, which normalises and records the weights it used)"
                 ));
