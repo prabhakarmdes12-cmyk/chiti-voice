@@ -136,15 +136,14 @@ fn committed_audio_and_committed_numbers_describe_each_other() {
     assert_eq!((rate, channels, bits), (24000, 1, 16), "reference must be 24 kHz mono PCM16");
 
     let payload = &bytes[44..44 + data_len];
-    let samples: Vec<i16> = payload
-        .chunks_exact(2)
-        .map(|b| i16::from_le_bytes(b.try_into().unwrap()))
-        .collect();
+    // as_chunks::<2>() rather than chunks_exact(2): `clippy::chunks_exact_to_as_chunks` makes
+    // the latter a hard error under this repo's `-D warnings`, and naming the leftover tail is
+    // the point — a stray byte at the end of the reference would otherwise be dropped silently.
+    // Same shape as `wav.rs`'s encoder, which is where this idiom came from in the first place.
+    let (pairs, trailing) = payload.as_chunks::<2>();
+    assert!(trailing.is_empty(), "no trailing partial sample in the reference");
+    let samples: Vec<i16> = pairs.iter().map(|b| i16::from_le_bytes(*b)).collect();
     assert_eq!(int(&r["expected"], "samples") as usize, samples.len());
-    // Whole-number-of-samples stated as an equality rather than `payload.len() % 2 == 0`:
-    // clippy's `manual_is_multiple_of` rejects the modulo, and this repo lints with
-    // `-D warnings`, so the idiomatic form is the one that builds.
-    assert_eq!(payload.len(), samples.len() * 2, "no trailing partial sample in the reference");
 
     let sum_sq: f64 = samples.iter().map(|&s| (f64::from(s) / 32768.0).powi(2)).sum();
     let rms = (sum_sq / samples.len() as f64).sqrt();
