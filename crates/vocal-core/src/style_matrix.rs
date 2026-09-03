@@ -87,8 +87,9 @@ impl<'a> StyleMatrix<'a> {
     }
 
     /// As [`row`] but for a raw float32 slice, for callers that already hold decoded samples (a
-    /// derived persona in memory, before it is ever written to disk).
-    #[must_use]
+    /// derived persona in memory, before it is ever written to disk). No `#[must_use]`: the return
+    /// is already a `Result`, and clippy calls the duplicate noise — rightly, a bare `must_use`
+    /// without a message says nothing the type does not.
     pub fn row_from_flat(flat: &[f32], index: usize) -> VoiceResult<Vec<f32>> {
         let width = STYLE_DIM;
         if flat.len() != ROWS * width {

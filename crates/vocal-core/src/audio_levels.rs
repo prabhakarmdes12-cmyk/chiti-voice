@@ -374,7 +374,11 @@ mod tests {
         };
         let (exact, _) = normalise(&s, &spec);
         let mut copy = s.clone();
-        apply_f32(&mut copy, &spec);
+        let via_playback = apply_f32(&mut copy, &spec);
+        assert!(
+            !via_playback.gain_limited && !via_playback.ceiling_limited,
+            "the two paths must be comparing the same decision, got {via_playback:?}"
+        );
         let via_float = to_pcm16(&copy);
         for (a, b) in exact.iter().zip(via_float.iter()) {
             assert!(i16::abs(*a - *b) <= 1, "{a} vs {b}: rounding paths diverged");

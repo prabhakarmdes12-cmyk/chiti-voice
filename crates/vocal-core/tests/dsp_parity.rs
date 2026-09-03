@@ -191,7 +191,7 @@ fn the_row_index_rule_and_the_asset_size_agree_with_the_contract() {
         .expect("the clamped index must stay addressable");
     assert_eq!(row.len(), 256);
     assert!(
-        row.iter().all(f32::is_finite),
+        row.iter().all(|v| v.is_finite()),
         "0x07 repeated must decode to tiny numbers, never to NaN"
     );
     // And the *next* row index past the matrix is an error, not a panic: `n_tokens` clamps, but a
