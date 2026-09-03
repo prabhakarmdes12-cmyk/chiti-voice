@@ -25,6 +25,15 @@ Tara is intelligent, warm, and professional without sounding corporate. She spea
 | Warmth | 0.72 | 0.0–1.0 | Key differentiator from Kashi |
 | Expressiveness | 0.58 | 0.0–1.0 | Engaged but professional |
 
+**What this table can and cannot drive** (measured 2026-09-03, see
+[`docs/research/PERSONA_STYLE_VECTORS.md`](../research/PERSONA_STYLE_VECTORS.md)). The engine accepts
+`input_ids`, `style`, `speed` — so of the five rows above, **only Speed exists as a control**. Pitch,
+Energy and Expressiveness are targets to reach by *casting and normalising* a 256-float style vector;
+Warmth has no implementation at all and is here as intent, not as a knob. Current best cast:
+`assets/offline-spike/persona-tara.wav` — `af_bella` 0.40 + `af_heart` 0.35 + `af_aoede` 0.25 at
+speed 1.0, normalised to −21 dBFS, measuring 187.5 Hz median F0 and 15.45 phonemes/s against the
+spec's intent.
+
 ## Intent Profiles
 | Intent | Speed | Energy | Warmth | Expressiveness | Notes |
 |---|---|---|---|---|---|

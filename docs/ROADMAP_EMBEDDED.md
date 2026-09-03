@@ -254,7 +254,7 @@ resolves to one of three things, with very different costs:
 | Path | What you get | Cost | Notes |
 |---|---|---|---|
 | **A. Adopt an existing open voice** | A real, offline, working persona today (e.g. a Piper `en-IN`/`en-GB` voice; Kokoro/Pocket voices for better quality) | days | Fastest. But it is *their* voice, not your brand voice, and "Tara" becomes a label on someone else's timbre. Verify each model card (§3). |
-| **B′. Derive a style vector** (Kokoro-class engines only) | A new persona as a **522 KB** style matrix (510 × 256 f32) against the shared 88 MB graph — which is also why one device can carry the whole roster | days–weeks, one GPU session | Added after the spike, because it changes this table's premise: for this engine family a *voice* is not a model. Caveat found while reading the reference code: the style row is selected by utterance length, so prosody depends on how the daemon chunks sentences (§2 Step 3). Interpolating two existing vectors is cheap and yields a "new" timbre, but it is a blend, not a speaker — say so in any manifest. |
+| **B′. Derive a style vector** (Kokoro-class engines only) | A new persona as a **522 KB** style matrix (510 × 256 f32) against the shared 88 MB graph — which is also why one device can carry the whole roster | days–weeks, one GPU session | Added after the spike, because it changes this table's premise: for this engine family a *voice* is not a model. Caveat found while reading the reference code: the style row is selected by utterance length, so prosody depends on how the daemon chunks sentences (§2 Step 3). Interpolating two existing vectors is cheap and yields a "new" timbre, but it is a blend, not a speaker — say so in any manifest. **Measured 2026-09-03** ([`PERSONA_STYLE_VECTORS.md`](./research/PERSONA_STYLE_VECTORS.md)): all 54 stock vectors surveyed; blending interpolates register (0.4–3.7 % off the weighted mean) but *attenuates pitch range below every source*, so it suits restrained personas and damages expressive ones — a cast is therefore `selection + speed + gain`, and `scripts/derive-persona-style.py` implements it. |
 | **B. Clone/fine-tune toward a target** | A persona that sounds like a reference speaker (**reference clips exist now:** `assets/persona-auditions/*.wav`, 22.9–24.2 s mono 24 kHz — see §5.1) | weeks + GPU | Pocket TTS clones from a very short reference under MIT [8](https://getstream.io/blog/best-on-device-tts-models/) — the cheapest legitimate route to a distinctive voice. Kokoro fine-tuning is Apache-2.0-friendly. Model size/latency then follow the base model, i.e. T1 tier, not a toy. |
 | **C. Commission a speaker + train** | Ownable, consistent, licensable brand voice; satisfies INV_008 properly (consent contract, terms of use, term length, territory) | months + money + a dataset pipeline | The only path that yields a *product asset* you can license onward — which is what a `.cvpack` business model presumes. |
 
@@ -296,6 +296,11 @@ meaningful.
 
 ## 6. Known gaps deliberately left open by this commit
 
+- Four of the five parameters in `docs/personas/*.md` (Pitch, Energy, Warmth, Expressiveness) are
+  **not engine inputs** — verified against the ONNX graph, which accepts `input_ids`, `style`, `speed`
+  and nothing else. They are now documented as casting/post-processing targets rather than dials
+  (`PERSONA_STYLE_VECTORS.md` §1). Product decision still open: redefine them at pack level, or delete
+  them from the specs.
 - `zip = "0.6"` — two majors behind (0.6 → 2.x renamed the write/read APIs). Not upgraded
   blind because nothing here can compile-check it; do it in a PR with `cargo test` running.
 - `security.rs` returns `Result<(), String>`; `error.rs` therefore maps pack failures to

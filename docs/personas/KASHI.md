@@ -25,6 +25,15 @@ Kashi is mature, measured, and reassuring. He does not rush. He speaks with the 
 | Warmth | 0.60 | Warm but restrained |
 | Expressiveness | 0.42 | Understated — quality over expressiveness |
 
+**What this table can and cannot drive** (measured 2026-09-03, see
+[`docs/research/PERSONA_STYLE_VECTORS.md`](../research/PERSONA_STYLE_VECTORS.md)). **Only Speed is an
+engine input**; register comes from choosing a low-F0 vector, loudness from a gain stage, and Warmth
+has no implementation. Current best cast: `assets/offline-spike/persona-kashi.wav` — `hm_omega` 0.45
++ `am_michael` 0.35 + `bm_lewis` 0.20 at speed 0.92, normalised to −22.5 dBFS, measuring 113.7 Hz
+median F0. Expressiveness 0.42 is honoured almost by accident: blending style vectors measurably
+*flattens* pitch movement, which suits this persona and is exactly why it must not be used for Bobo.
+Hindi output additionally depends on espeak-ng's `hi` voice, whose phonemes here are unverified.
+
 ## Intent Profiles
 | Intent | Speed | Energy | Warmth | Expressiveness | Notes |
 |---|---|---|---|---|---|
