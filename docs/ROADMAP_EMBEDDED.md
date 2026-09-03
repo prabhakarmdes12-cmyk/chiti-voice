@@ -344,6 +344,17 @@ meaningful.
   under, and `persona.chunking` is not a field, so two builds with different defaults would still sound
   different from the same pack. The other gap also stands: **no tokenizer slot** (the 115-symbol table is
   still an out-of-band file).
+- `encode` and the upstream tokenizer disagree about characters outside the 115-entry vocab, and the
+  disagreement is audible. Upstream maps an unmapped character to a `PAD` *token* (`vocab.get(c, pad)`),
+  keeping the sequence's length; `phoneme_tokens::strip_to_vocab` deletes it, shortening both the id list
+  and — because the row index *is* the token count — the style row. The concrete exposure is this
+  vocabulary's shape: it carries U+0261 (script-g) and not ASCII `g`, which is what espeak-style IPA
+  emits for /g/, so a phonemiser without that mapping loses every 'g' silently and shifts prosody by the
+  same amount. `tests/kokoro_tokens.rs` already guarantees the *fixtures* never exercise the difference
+  (they assert no stripping is needed at all), which is a fence, not an answer. The engine commit picks
+  one: be faithful to upstream, or refuse unknown input loudly. Doing neither is the status quo, and the
+  doc comment that described the first while the code did the second has now been corrected.
+
 - Loudness normalisation exists and is measured, but nothing that produces audio uses it yet:
   `vocal_core::audio_levels` implements the `target_dbfs` / `peak_ceiling` / `max_gain_db` stage the
   manifest declares, `tests/dsp_parity.rs` grades the i16 scaling against real graph output, and the
