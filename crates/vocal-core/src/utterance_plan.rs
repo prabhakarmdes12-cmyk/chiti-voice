@@ -261,10 +261,12 @@ pub fn plan_pieces(pieces: &[Piece], policy: &PlanPolicy) -> VoiceResult<Plan> {
         index += 1;
     }
 
-    Ok(Plan {
-        utterances: runs.iter().map(|run| utterance_from(run)).collect(),
-        policy: *policy,
-    })
+    let mut utterances = Vec::with_capacity(runs.len());
+    for run in &runs {
+        utterances.push(utterance_from(run));
+    }
+
+    Ok(Plan { utterances, policy: *policy })
 }
 
 #[cfg(test)]
