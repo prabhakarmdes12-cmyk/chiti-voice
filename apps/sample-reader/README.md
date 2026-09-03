@@ -18,16 +18,22 @@ cargo run -p chiti-sample-reader -- --text "hələʊ wɜːld" --voice kashi
 ```
 
 It loads `voice-packs/dist/tara.cvpack` by default, prints one line per input, and exits non-zero on a
-bad pack path. A sample run looks like (first command, output trimmed to the first input line):
+bad pack path. The report shape:
 
 ```text
-pack=tara.cvpack id=tara placeholder=true
-policy max_units=509 min_chunk_units=8 declared=pack
-loudness target_dbfs=-21 peak_ceiling=0.98 max_gain_db=12
-line 1 chunks=1 units=11 tokens=11 row_matches_units=true
-render voice=tara-mock bytes=… file=/tmp/sample.wav silent=true
+pack=<file> id=<manifest id> placeholder=<is this a stub pack>
+policy max_units=509 min_chunk_units=8 declared=pack|engine default
+loudness target_dbfs=… peak_ceiling=… max_gain_db=…
+line N chunks=… units=… framed=… row_matches_units=… framed_ok=…
+render voice=… bytes=… file=… silent=…
 note: vocal_core::REAL_SYNTHESIS_AVAILABLE=false -- the file above is the mock engine's output, not speech
 ```
+
+The `policy` numbers are the ones `voice-packs/tara/manifest.json` declares, and the loudness triple is
+its `loudness` block. Everything else is deliberately written as `…`: this README has no Rust toolchain
+to run against, and a sample document full of plausible-looking fabricated output is the most reliable
+way to teach a number that was never measured. The tests in `tests/integration.rs` are what pin these
+fields; they run the built binary, so the values they assert are CI's, not mine.
 
 ## What each line is doing
 
@@ -39,10 +45,15 @@ note: vocal_core::REAL_SYNTHESIS_AVAILABLE=false -- the file above is the mock e
 - **`row_matches_units=true`** — the style row a chunk reads is its own token count. If that ever
   disagrees, the index into the voice vector has moved, which is a silent change of prosody, so the
   sample treats it as a hard error rather than a detail.
-- **`tokens=11`** — `encode` is faithful to the reference vocabulary: an unmapped symbol becomes a
-  counted pad token instead of vanishing, so the token count equals the character count. The third line
-  of `fixtures/lines.txt` deliberately contains ASCII `g`, which Kokoro's table does not have (it carries
-  U+0261 script-g), so it exercises exactly that path.
+- **`framed = units + 2`** -- `encode` is reference-faithful in two ways that are easy to conflate. An
+  unmapped symbol becomes a counted `PAD` slot rather than vanishing, so the content token count equals
+  the character count; and the sequence is framed `PAD … PAD`, so the encoded tensor is two rows wider
+  than the content. `framed_ok=false` means that relation broke somewhere other than the framing, which
+  is why the sample treats it as a hard error. The third line of `fixtures/lines.txt` contains ASCII `g`,
+  which Kokoro's table does not have (it carries U+0261 script-g), so it exercises the pad path.
+  Do not "fix" an unmapped symbol by filtering it out: `strip_to_vocab` exists, and its own doc says a
+  filter in the synthesis path moves the style row and therefore the prosody, which is why it survives
+  only as a reporting helper.
 - **`silent=true`** — `MockEngine` emits digital silence. This is not a bug in the sample; it is the
   honest state of `crates/`, which cannot run the ONNX graph yet. The last line says so out loud, in the
   output, where a reader will see it.

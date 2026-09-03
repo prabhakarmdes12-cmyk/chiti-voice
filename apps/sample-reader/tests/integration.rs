@@ -70,6 +70,10 @@ fn renders_the_shipped_pack_through_the_public_api() {
          as the engine default: {stdout}"
     );
     assert!(
+        !stdout.contains("framed_ok=false"),
+        "a render whose tensor width is not units+2 would feed the model a short sequence: {stdout}"
+    );
+    assert!(
         !stdout.contains("row_matches_units=false"),
         "a style row that disagrees with its unit count means the voice-vector index moved:\n{stdout}"
     );

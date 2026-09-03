@@ -151,14 +151,26 @@ async fn run() -> Exit {
         let pieces: Vec<Piece> = line.split_whitespace().map(Piece::phonemes).collect();
         let plan = plan_pieces(&pieces, &policy)?;
         let units: usize = plan.utterances.iter().map(|u| u.units).sum();
-        let tokens = encode(line).len();
+        // Measured per utterance, never per line. Two independent reasons the line is the wrong unit:
+        // plan_pieces splits a long line into several utterances, and `encode` truncates at MAX_TOKENS,
+        // so `encode(line)` on an over-long input saturates at 512 and reports nothing about the plan.
+        // And `encode` frames its input -- PAD, characters, PAD -- so the tensor an integrator
+        // allocates is 2 rows wider than the content it counts. That off-by-two is the trap here: size
+        // `input_ids` from `units` instead of `units + 2` and the model reads a sequence one short.
+        let framed: usize = plan.utterances.iter().map(|u| encode(&u.phonemes).len()).sum();
         let rows_match = plan.utterances.iter().all(|u| u.style_row == u.units);
+        let framed_ok = plan
+            .utterances
+            .iter()
+            .all(|u| encode(&u.phonemes).len() == u.units + 2);
         println!(
-            "line {} chunks={} units={} tokens={tokens} row_matches_units={rows_match}",
+            "line {} chunks={} units={} framed={framed} row_matches_units={rows_match} framed_ok={framed_ok}",
             index + 1,
             plan.utterances.len(),
             units
         );
+        // Print first, then refuse: a report line carrying the false flag is what a failing run leaves
+        // behind, and an error alone would hide which of the two properties broke.
         if !rows_match {
             return Err(format!(
                 "line {}: a style row disagreed with its utterance's unit count, which means the \
@@ -167,12 +179,11 @@ async fn run() -> Exit {
             )
             .into());
         }
-        if tokens != line.chars().count() {
+        if !framed_ok {
             return Err(format!(
-                "line {}: encode() produced {tokens} tokens for {} characters; the reference pads \
-                 unknown symbols, so these should be equal",
-                index + 1,
-                line.chars().count()
+                "line {}: an utterance's content units and its encoded length disagreed by something \
+                 other than the two framing PADs, so the tensor width and the style row cannot both be right",
+                index + 1
             )
             .into());
         }
