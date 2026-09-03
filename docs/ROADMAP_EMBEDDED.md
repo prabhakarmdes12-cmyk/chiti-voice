@@ -185,6 +185,26 @@ Steps 1–2 are where the product either exists or doesn't. Everything after tha
 
 ---
 
+### Resolved 2026-09-03 (invariants): three claims, checked or honestly retired
+
+`VOICE_INV_005` (Deterministic Core) is now tested by `crates/vocal-core/tests/determinism_test.rs`:
+ten renders of one sentence compared byte-for-byte and on reported metadata, a second engine instance
+(a single-instance loop cannot see state captured at `initialize()`), repeated `encode`/`plan_pieces`
+compared on tokens, units and style rows, and a scan of the shipped half of each deterministic module for
+a clock, an RNG or a pid. `VOICE_INV_012` (Version Compatibility) was the weaker contract and is now the
+documented one: `SUPPORTED_SCHEMA_VERSION` replaces a literal that appeared in four places, the rejection
+names both the declared and the accepted version, and `wrong_schema_version_is_rejected` pins it. Exact
+match rather than a `semver` range is a decision with a reason -- the invariant claimed a `semver` crate
+that was never in `Cargo.toml`.
+
+Three things the invariant documents asserted and this tree does not do are now written as absences
+rather than left to inference: the request half of `VOICE_INV_011` (no `VocalClient`, no `queue.rs`, no
+`TextTooLongError`, no `QueueFullError`), the `Float32Array` golden and NANO/LITE/STUDIO tier runs under
+`VOICE_INV_005`, and the TypeScript type-surface snapshot under `VOICE_INV_012`. One narrower gap is
+recorded where it will be read: the PRD-only "No Executable Content" rule is enforced by *extension*, so
+an extensionless ELF inside a pack still loads. Fixing that means reading ZIP mode bits or sniffing
+magic bytes -- both are loader changes, and neither belongs in a documentation pass.
+
 ### Resolved 2026-09-03 (docs): one ID, two rules
 
 `PRD.md`'s invariant table and `docs/architecture/INVARIANTS.md` assigned the same identifiers to

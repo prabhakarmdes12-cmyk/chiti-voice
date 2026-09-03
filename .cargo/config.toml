@@ -1,6 +1,0 @@
-# TEMPORARY -- one CI cycle only. This slice adds a test target and edits four Rust sources in a sandbox with no
-# compiler, so a compile error in #[cfg(test)] code would otherwise arrive as a red job with no text in
-# it. The wrapper turns rustc/clippy diagnostics into check-run annotations; Windows runners cannot exec
-# a bash script, so that leg goes red meanwhile and this file is deleted in the follow-up commit.
-[build]
-rustc-wrapper = "./scripts/ci-rustc-wrapper.sh"
