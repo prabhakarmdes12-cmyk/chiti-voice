@@ -18,6 +18,7 @@ pub mod style_matrix;
 pub mod state;
 pub mod synthesis;
 pub mod text_normalization;
+pub mod utterance_plan;
 pub mod wav;
 
 pub use audio_levels::{LoudnessApplied, LoudnessSpec};
@@ -25,6 +26,7 @@ pub use engine::{VoiceEngine, VoiceEngineRegistry};
 pub use error::{VoiceError, VoiceErrorCode, VoiceResult};
 pub use persona::{Persona, PersonaRuntime};
 pub use synthesis::{SynthesisRequest, SynthesisResponse, SynthesisFormat};
+pub use utterance_plan::{Piece, Plan, PlanPolicy, Utterance, plan_pieces};
 
 /// The semantic version of Chiti Vocal Core
 pub const VOCAL_CORE_VERSION: &str = "0.1.0-alpha";

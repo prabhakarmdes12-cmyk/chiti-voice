@@ -335,14 +335,21 @@ meaningful.
   `pronunciation_overrides` map for proper nouns (`chiti` → `ˈtʃɪti`, which is what the permissive
   graph otherwise mangles). Packs are generated from the spec docs by
   `scripts/sync-persona-manifests.py` (`--check` is wired into `ops/ci/`; the live Phase 1 workflow's
-  job list is fixed). Two gaps remain: **no tokenizer slot** (the 115-symbol table is still an
-  out-of-band file), and **no chunking policy**, which is the more dangerous one — the engine picks the
-  style row by utterance token count, so how the daemon splits sentences changes the prosody of a
-  pack, and nothing in the manifest says what the pack was tuned for. Both belong in the inference
-  commit, not in a schema tweak after it.
-- No output-level normalisation anywhere, and the spike says it is needed: peak ranged
-  0.50–0.99 across voices on the same sentence. One hot voice plus a device volume at max is
-  clipping.
+  job list is fixed). Of the two gaps recorded there, the more dangerous one is now closed at the
+  engine level: `vocal_core::utterance_plan` owns the chunking policy, because the style row is selected
+  by utterance token count and so how the daemon splits sentences *is* the prosody. Its default ceiling
+  is 509 tokens — one below what `encode` truncates at — which makes truncation of a long request
+  structurally impossible instead of silent, and `PlanPolicy` travels with every `Plan` so a rendering
+  can be reproduced. What remains open is the manifest half: no pack yet says which policy it was tuned
+  under, and `persona.chunking` is not a field, so two builds with different defaults would still sound
+  different from the same pack. The other gap also stands: **no tokenizer slot** (the 115-symbol table is
+  still an out-of-band file).
+- Loudness normalisation exists and is measured, but nothing that produces audio uses it yet:
+  `vocal_core::audio_levels` implements the `target_dbfs` / `peak_ceiling` / `max_gain_db` stage the
+  manifest declares, `tests/dsp_parity.rs` grades the i16 scaling against real graph output, and the
+  persona runtime maps intent energy onto it. The gap is that only the mock path runs it — which is
+  Step 2's job, not a schema job. The spike's reason for the stage is unchanged: peak ranged 0.50–0.99
+  across voices on one sentence, and 0.99 is one hot voice from clipping.
 - `MOCK` engine's silence-as-valid-audio design invites exactly the false-completeness this
   repo had. Consider making `MockEngine` refuse unless `#[cfg(test)]` or an explicit
   `--allow-silence`, and deleting the "produces audio" framing from all future docs.
