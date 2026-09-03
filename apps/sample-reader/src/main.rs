@@ -164,7 +164,8 @@ async fn run() -> Exit {
             .iter()
             .all(|u| encode(&u.phonemes).len() == u.units + 2);
         println!(
-            "line {} chunks={} units={} framed={framed} row_matches_units={rows_match} framed_ok={framed_ok}",
+            "line {} chunks={} units={} framed={framed} row_matches_units={rows_match} \
+             framed_ok={framed_ok}",
             index + 1,
             plan.utterances.len(),
             units

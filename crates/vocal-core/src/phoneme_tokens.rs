@@ -122,6 +122,11 @@ pub fn unmapped_symbols(phonemes: &str) -> Vec<char> {
 
 /// `$ seq $` — pad-wrapped, truncated to [`MAX_TOKENS`]. Input is *phonemes*, not text.
 ///
+/// The result is always two ids longer than the input's character count -- `chars + 2` -- until it hits
+/// the cap, so a caller allocating `input_ids` sizes it from the encoded length, never from the text.
+/// The crate's own `phoneme_framing` test pins that, and `apps/sample-reader` prints `framed=` next
+/// to `units=` so an integrator can see they are two different numbers rather than one of them.
+///
 /// A character outside the table becomes [`PAD`], which is what the reference does (`vocab.get(c, pad)`)
 /// and therefore what the recorded fixtures were produced by. It used to be filtered out here, which is
 /// a quiet way to change a voice: dropping a character shortens the sequence, and the style row is

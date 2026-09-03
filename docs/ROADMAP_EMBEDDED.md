@@ -463,6 +463,47 @@ steps live in `ops/ci/ci-phase1.yml`, the successor workflow, so the gate runs o
 with `scripts/install-ci.sh`; the live `.github/workflows/ci-phase1.yml` cannot be edited from this
 environment, and its docs checks are narrower than these.
 
+### Resolved 2026-09-03 (tests): the public API had never been used from outside its crates
+
+Every test in this workspace is compiled inside the crate it tests, which means an in-crate test passes
+whether an item is `pub` or `pub(crate)`, whether an error type can be named from outside, and whether
+the pieces compose at all. "The public API is sufficient to build something" was therefore a claim with
+no check behind it, so `apps/sample-reader` exists: a separate package with path dependencies, no special
+access, its own integration tests driving the built binary as a subprocess, and `clippy -D warnings`
+applied to it by the same jobs as everything else. It loads a tracked `voice-pack` archive, takes the
+persona's *resolved* chunking policy rather than inventing one, plans through `plan_pieces`, renders and
+writes a WAV, and prints a report line per input so a test can assert on behaviour instead of exit codes.
+It states `REAL_SYNTHESIS_AVAILABLE=false` in its own output, because a sample that writes a `.wav` and
+says nothing about the engine being a mock is how a README comes to claim audible output.
+
+Three things came out of writing it, which is the point of writing these:
+
+- `encode`'s arithmetic, now in its doc comment and pinned by `crates/vocal-core/tests/phoneme_framing.rs`:
+  the result is always `chars + 2` ids until it saturates at `MAX_TOKENS`, because the sequence is framed
+  `PAD … PAD`. An integrator who sizes `input_ids` from the content count allocates one row short and the
+  model reads a truncated sequence. Nothing in the tree said that in one line before the sample tried to.
+- The temptation to make counts agree by calling `strip_to_vocab` is a trap the crate already documents --
+  filtering changes the sequence length, the style row is the sequence length, so a filter in the synthesis
+  path moves prosody along with the sound. The sample pads, and keeps a fixture line whose ASCII `g` the
+  table lacks, so the pad path is exercised by the corpus rather than described.
+- `row_matches_units` and `framed_ok` are hard errors, not notes. A style row disagreeing with its
+  utterance's unit count means the index into the voice vector moved, which is a silent change of voice.
+
+Two of the five tests were wrong before any of this and are worth recording as failures of process. The
+determinism test compared stdout from two runs writing into two *different* temp dirs, so it could only
+fail on the printed path; both runs now share a directory, and the WAV is read back between them. And the
+crate's own README shipped an example run with invented numbers including `tokens=11`, which was both the
+wrong count and the wrong relation -- that example is now a field shape with `…` wherever a value was
+never measured, and the only literal numbers left are the ones a reader can grep out of
+`voice-packs/tara/manifest.json`. A sample document is the highest-leverage place to teach a number that
+was never measured, because everyone copies it.
+
+The doc gate earned its keep on this slice too, by producing a false finding: it skipped any directory
+named `dist` to avoid build output, then reported the repository's *tracked* `voice-packs/dist/*.cvpack`
+files as missing and blocked a correct commit. It now enumerates tracked files with `git ls-files`, with a
+directory walk kept only as a fallback for tarballs and for its own `--self-test` tree. A gate that invents
+findings is worse than no gate, because it trains the reader to ignore it.
+
 ## 3. The licensing trap, stated plainly
 
 `LICENSE` now carries the table; this is the short version, because it can invalidate the
