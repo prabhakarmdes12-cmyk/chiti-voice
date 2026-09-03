@@ -397,7 +397,7 @@ impl PackManifest {
             }
         }
 
-        if let Some(chunking) = &self.chunking {
+        if let Some(chunking) = &persona.chunking {
             // Both numbers are token budgets, so 0 is not "unspecified" here -- it is a policy under
             // which no utterance can exist. Reject it rather than let a default swallow the typo.
             if chunking.max_units == 0 || chunking.min_chunk_units == 0 {
