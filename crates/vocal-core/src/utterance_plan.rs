@@ -281,7 +281,8 @@ mod tests {
     #[test]
     fn nothing_in_is_nothing_out() {
         let plan = plan_pieces(&[], &PlanPolicy::default()).unwrap();
-        assert!(plan.is_empty() && plan.len() == 0);
+        assert!(plan.is_empty());
+        assert!(plan.utterances.is_empty(), "the plan and its Vec agree, which is all `len` could say");
 
         // A run the vocabulary filter erases entirely bills nothing, so it must not become a chunk of
         // its own. U+2603 is certainly absent from a 178-entry IPA table; a space is not, which is why
