@@ -429,3 +429,25 @@ There are no emergency exceptions. If the emergency is real, the protocol still 
 ---
 
 *Document maintained by the Chiti Platform Team. For the state machine these invariants protect, see [STATE_MACHINE.md](./STATE_MACHINE.md). For security constraints, see [SECURITY.md](./SECURITY.md).*
+
+---
+
+## Requirements tracked in `PRD.md` without a canonical invariant
+
+`PRD.md`'s invariants table re-used IDs `VOICE_INV_003`–`012` for nine requirements this document does
+not define, while code, `SECURITY.md` and `STATE_MACHINE.md` cite the IDs above. The table now keeps
+the canonical IDs and marks the rest **PRD-only** rather than assigning them conflicting numbers, so
+they are not lost -- they are simply not enforced here:
+
+- Language-Voice Separation · Engine Interface · No Direct Backend Instantiation
+- Persona Config Separation · Loopback Only and No Telemetry (each a specific clause of
+  VOICE_INV_007) · Pack Integrity (enforced as part of VOICE_INV_008 by `validate_files`)
+- No Executable Content · RTF Bound (the only exit criterion in the PRD with no implementation
+  or measurement behind it: RTF figures in `docs/research/` are x86-container numbers, not the
+  reference hardware)
+
+Promoting any of them into this document is a product decision, not a documentation cleanup, so it has
+been left open deliberately. What is no longer optional is the ID↔name pairing:
+`scripts/verify-doc-claims.py` parses the `**ID**`/`**Name**` table above, requires this file's headings
+and table to agree, and fails any markdown file *or Rust doc comment* that pairs an ID with a different
+name or cites an ID that is not defined. Run it with `--self-test` to see that it can fail.

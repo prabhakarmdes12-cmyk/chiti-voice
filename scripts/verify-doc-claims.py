@@ -67,20 +67,64 @@ NEGATIONS = (
 
 # Paths an author has declared as intentionally-not-here, with the reason that makes it legitimate.
 PLANNED: dict[str, str] = {
-    "tests/determinism_test.rs": "invariant verification plan (VOICE_INV_003); test not yet written",
+    "tests/determinism_test.rs": "invariant verification plan (VOICE_INV_005 Deterministic Core); test not yet written",
     "tests/degradation_test.rs": "invariant verification plan (VOICE_INV_005); test not yet written",
     "tests/interruptibility_test.rs": "invariant verification plan (VOICE_INV_009); test not yet written",
-    "tests/offline_test.rs": "invariant verification plan (VOICE_INV_001); test not yet written",
-    "tests/pack_verify_test.rs": "invariant verification plan (VOICE_INV_008); test not yet written",
-    "tests/persona_independence_test.rs": "invariant verification plan; test not yet written",
+    "tests/offline_test.rs": "invariant verification plan (VOICE_INV_001 Offline Independence); test not yet written",
+    "tests/pack_verify_test.rs": "invariant verification plan (VOICE_INV_008 Voice Provenance); test not yet written",
+    "tests/persona_independence_test.rs": "invariant verification plan (VOICE_INV_004 Persona Independence); test not yet written",
     "tests/resource_limits_test.rs": "invariant verification plan (VOICE_INV_011); test not yet written",
     "tests/stream_safety_test.rs": "invariant verification plan (VOICE_INV_010); test not yet written",
-    "tests/version_compat_test.rs": "invariant verification plan (VOICE_INV_012); test not yet written",
+    "tests/version_compat_test.rs": "invariant verification plan (VOICE_INV_012 Version Compatibility); test not yet written",
     "packages/chiti-voice-sdk/src/types.ts": "the SDK is specified in docs/api, not built",
     "docs/CVPACK_SPECIFICATION.md": "documented as a planned companion to the .cvpack format",
 }
 
 SKIP_DIRS = {".git", "target", "node_modules", ".cargo", "dist"}
+
+
+def canonical_invariants() -> tuple[dict[str, str], list[str]]:
+    """Read the ID -> Name registry from `docs/architecture/INVARIANTS.md`, the file every code
+    comment cites. Both of its forms (the `### ID — Name` headings and the `| **ID** | … | **Name** |`
+    table rows) are parsed and required to agree: the document that *defines* the IDs must not itself
+    drift, or the whole rule below rests on a broken source. Returns the map plus internal problems.
+    """
+    path = ROOT / "docs" / "architecture" / "INVARIANTS.md"
+    problems: list[str] = []
+    if not path.is_file():
+        return {}, ["INVARIANTS.md is missing, so no invariant ID can be checked against a registry"]
+    text = path.read_text(encoding="utf-8", errors="replace")
+    from_headings = dict(re.findall(r"###\s*(VOICE_INV_\d{3})\s*[—–-]{1,2}\s*([A-Za-z][A-Za-z '’/-]+?)\s*$", text, re.M))
+    ids = re.findall(r"\| \*\*ID\*\* \| (VOICE_INV_\d{3}) \|", text)
+    names = [n.strip() for n in re.findall(r"\| \*\*Name\*\* \| ([^|]+) \|", text)]
+    from_table = dict(zip(ids, names))
+    for key in sorted(set(from_headings) | set(from_table)):
+        a, b = from_headings.get(key), from_table.get(key)
+        if a and b and a.strip() != b:
+            problems.append(f"INVARIANTS.md defines {key} as {a!r} in its heading and {b!r} in its table")
+    registry = {**from_table, **from_headings}
+    if len(registry) < 12:
+        problems.append(f"INVARIANTS.md defines only {len(registry)} invariants; 12 are expected")
+    return registry, problems
+
+
+# `ID — Name`, `| ID | Name |`, and `ID (Name)` are the three ways this repo pairs an invariant ID
+# with its name. All three must agree with the registry, because an ID paired with the wrong name is
+# how `PRD.md` came to mean "bind to loopback" by `VOICE_INV_008` while the code meant "provenance".
+ID_NAME_DASH = re.compile(r"`?(VOICE_INV_\d{3})`?\s*[—–-]{1,2}\s*([A-Z][A-Za-z ]{2,40}?)(?=\s*(?:$|[.,;:(`|]|\n))", re.M)
+ID_NAME_TABLE = re.compile(r"\|\s*`?(VOICE_INV_\d{3})`?\s*\|\s*`?([A-Z][A-Za-z0-9 '’/-]{2,44}?)`?\s*\|")
+ID_NAME_PAREN = re.compile(r"VOICE_INV_\d{3}`?\s*\(\s*([A-Z][A-Za-z '’/-]{2,40}?)\s*\)")
+
+
+def cited_invariants(text: str):
+    """Yield (id, name) pairs a document asserts, from each of the three shapes."""
+    for rx in (ID_NAME_DASH, ID_NAME_TABLE, ID_NAME_PAREN):
+        for m in rx.finditer(text):
+            ident = m.group(1) if m.re.groups >= 2 and m.re.groups == 2 else None
+            if rx is ID_NAME_PAREN:
+                yield m.group(0).split()[0].strip("`"), m.group(1)
+            else:
+                yield ident or m.group(1), m.group(2)
 
 
 def tracked_files() -> list[Path]:
@@ -192,6 +236,70 @@ def main() -> int:
                         "(rewrite it in the past/negative tense, or add it to PLANNED with a reason)"
                     )
 
+    # Rule 5: an invariant ID may only ever be paired with the name the registry gives it -- in
+    # markdown and in Rust doc comments, because `security.rs` citing "VOICE_INV_008" is exactly as
+    # load-bearing as a spec doing so: that comment is why the provenance check is allowed to reject a
+    # pack, and if the ID had meant "loopback binding" the reader would have concluded the check was
+    # about networking. Code gets no "proposing" exemption: a comment cannot mint an invariant.
+    registry, reg_problems = canonical_invariants()
+    problems.extend(reg_problems)
+    if registry:
+        for f in files:
+            if f.suffix != ".rs":
+                continue
+            text = (ROOT / f).read_text(encoding="utf-8", errors="replace")
+            if "VOICE_INV_" not in text:
+                continue
+            lines = text.splitlines()
+            for ident, name in set(cited_invariants(text)):
+                name = name.strip()
+                where = f"{f}"
+                hits = [i for i, l in enumerate(lines, 1) if ident in l and name in l]
+                if hits:
+                    where = f"{f}:{hits[0]}"
+                if ident not in registry:
+                    problems.append(
+                        f"{where}: cites {ident}, which docs/architecture/INVARIANTS.md does not define"
+                    )
+                elif registry[ident] != name:
+                    problems.append(
+                        f"{where}: pairs {ident} with {name!r}, but the registry defines it as "
+                        f"{registry[ident]!r}"
+                    )
+
+    if registry:
+        for f in files:
+            if f.suffix != ".md":
+                continue
+            rel = str(f)
+            if rel.endswith("docs/architecture/INVARIANTS.md"):
+                continue
+            text = (ROOT / f).read_text(encoding="utf-8", errors="replace")
+            lines = text.splitlines()
+            for ident, name in set(cited_invariants(text)):
+                name = name.strip()
+                if ident not in registry:
+                    # A document may *propose* an invariant, but it has to say so on the same line it
+                    # cites the undefined ID. A document-wide exemption would let one stray
+                    # "(PRD-only)" anywhere license every undefined ID in the file.
+                    line_flags = any(
+                        ident in l and ("PRD-only" in l or "no canonical invariant" in l)
+                        for l in lines
+                    )
+                    if line_flags:
+                        continue
+                    problems.append(
+                        f"{rel}: cites {ident}, which docs/architecture/INVARIANTS.md does not define"
+                    )
+                elif registry[ident] != name:
+                    hits = [i for i, l in enumerate(lines, 1) if ident in l and name in l]
+                    where = f"{rel}:{hits[0]}" if hits else rel
+                    problems.append(
+                        f"{where}: pairs {ident} with {name!r}, but the registry defines it as "
+                        f"{registry[ident]!r} -- two documents using one ID for two rules is how an "
+                        "implementer ships the wrong check while every gate stays green"
+                    )
+
     # Rule: PLANNED is checked in both directions, so it cannot rot into a hidey-hole.
     for token, why in PLANNED.items():
         if resolves(token):
@@ -251,9 +359,30 @@ def self_test() -> int:
         "# Notes\n\n- The audit used to run `scripts/totally-made-up.sh`; that script was deleted and\n"
         "  no longer exists, so the check is the CI job itself.\n"
     )
+    # A 12-entry registry, because this script requires the real one to be complete: a canary run
+    # against a deliberately short stub would fail on the size check and prove nothing.
+    stub_ids = ["Offline Independence", "LLM Independence", "Provider Independence",
+                "Persona Independence", "Deterministic Core", "Graceful Degradation", "Local Privacy",
+                "Voice Provenance", "Interruptibility", "Streaming Safety", "Resource Limits",
+                "Version Compatibility"]
+    stub_body = "# Invariants\n\n" + "\n".join(
+        f"### VOICE_INV_{n:03d} — {name}\n\n| **ID** | VOICE_INV_{n:03d} |\n"
+        f"| **Name** | {name} |\n" for n, name in enumerate(stub_ids, 1)
+    )
+    registry_stub = {"docs/architecture/INVARIANTS.md": stub_body}
     cases = [
-        ("planted false claim is caught", {"docs/notes.md": planted_bad}, 1),
-        ("honest past-tense citation is allowed", {"docs/notes.md": planted_good}, 0),
+        ("planted false claim is caught", {**registry_stub, "docs/notes.md": planted_bad}, 1),
+        ("honest past-tense citation is allowed", {**registry_stub, "docs/notes.md": planted_good}, 0),
+        (
+            "an ID paired with a foreign name is caught",
+            {**registry_stub, "docs/notes.md": "# Notes\n\n- `VOICE_INV_001` — Loopback Only\n"},
+            1,
+        ),
+        (
+            "an ID paired with its registry name is allowed",
+            {**registry_stub, "docs/notes.md": "# Notes\n\n- `VOICE_INV_001` — Offline Independence\n"},
+            0,
+        ),
         (
             "stale PLANNED entry is caught",
             {"docs/notes.md": "# Notes\n", "tests/offline_test.rs": "// now it exists\n"},

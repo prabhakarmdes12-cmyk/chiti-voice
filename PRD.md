@@ -491,20 +491,29 @@ A developer should be able to install a voice, call `speak()`, and have it work 
 
 These invariants are non-negotiable architectural rules. Violation of any invariant is a critical defect regardless of whether tests pass.
 
+> **Invariant IDs follow `docs/architecture/INVARIANTS.md`, which is the source of truth.** Code
+> comments, `SECURITY.md` and `STATE_MACHINE.md` all cite those IDs, and `scripts/verify-doc-claims.py`
+> fails a document that pairs an ID with a different name. This table previously re-used IDs
+> `VOICE_INV_003`-`012` for seven *different* requirements, so "implement VOICE_INV_008" meant
+> loopback binding here and voice provenance everywhere else. Rows marked **PRD-only** state real
+> requirements that no canonical invariant covers yet; they carry no ID rather than a conflicting one.
+
+
+
 | ID | Name | Statement | Testable |
 |----|------|-----------|----------|
-| VOICE_INV_001 | Offline Synthesis | Synthesis MUST complete with no network connectivity. | Yes |
+| VOICE_INV_001 | Offline Independence | Synthesis MUST complete with no network connectivity. | Yes |
 | VOICE_INV_002 | LLM Independence | The synthesis pipeline MUST NOT require any LLM component. | Yes |
-| VOICE_INV_003 | Language-Voice Separation | Language generation and voice generation are independent systems. The voice layer accepts text; it does not generate it. | Yes (dependency audit) |
-| VOICE_INV_004 | Engine Interface | All TTS backends MUST be accessed exclusively through the `VoiceEngine` interface. | Yes (static analysis) |
-| VOICE_INV_005 | No Direct Backend Instantiation | No application or library outside of `vocal-core` MAY directly instantiate a backend. | Yes (code review gate) |
-| VOICE_INV_006 | Persona Isolation | Loading or using one persona MUST NOT affect another persona's parameters. | Yes |
-| VOICE_INV_007 | Persona Config Separation | Persona configuration is structurally separate from acoustic model files in every voice pack. | Yes (schema validation) |
-| VOICE_INV_008 | Loopback Only | The local daemon MUST bind only to `127.0.0.1`. | Yes (network inspection) |
-| VOICE_INV_009 | No Telemetry | The runtime MUST emit zero outbound telemetry in any build configuration. | Yes (network audit) |
-| VOICE_INV_010 | Pack Integrity | A voice pack with a failed checksum MUST be rejected before any model files are loaded. | Yes |
-| VOICE_INV_011 | No Executable Content | Voice packs MUST NOT contain any executable files; any such pack is rejected. | Yes |
-| VOICE_INV_012 | RTF Bound | No production voice pack MAY ship with an RTF ≥ 1.0 on reference hardware. | Yes (benchmark gate) |
+| -- | Language-Voice Separation (PRD-only) | The voice layer accepts text; it does not generate it. No canonical invariant defines this yet. | Yes (dependency audit) |
+| -- | Engine Interface (PRD-only) | All TTS backends MUST be accessed exclusively through the `VoiceEngine` interface. No canonical invariant defines this yet. | Yes (static analysis) |
+| -- | No Direct Backend Instantiation (PRD-only) | No application or library outside of `vocal-core` MAY directly instantiate a backend. | Yes (code review gate) |
+| VOICE_INV_004 | Persona Independence | Loading or using one persona MUST NOT affect another persona's parameters. | Yes |
+| -- | Persona Config Separation (PRD-only) | Persona configuration is structurally separate from acoustic model files in every voice pack. | Yes (schema validation) |
+| -- | Loopback Only (PRD-only, a clause of VOICE_INV_007) | The local daemon MUST bind only to `127.0.0.1`. | Yes (network inspection) |
+| -- | No Telemetry (PRD-only, a clause of VOICE_INV_007) | The runtime MUST emit zero outbound telemetry in any build configuration. | Yes (network audit) |
+| -- | Pack Integrity (PRD-only, enforced by VOICE_INV_008) | A voice pack with a failed checksum MUST be rejected before any model files are loaded. | Yes |
+| -- | No Executable Content (PRD-only) | Voice packs MUST NOT contain any executable files; any such pack is rejected. | Yes |
+| -- | RTF Bound (PRD-only) | No production voice pack MAY ship with an RTF >= 1.0 on reference hardware. | Yes (benchmark gate) |
 
 ---
 
