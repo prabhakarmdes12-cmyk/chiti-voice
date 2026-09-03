@@ -8,16 +8,19 @@
 //! - Voice pack loading and validation
 //! - PCM audio output
 
+pub mod audio_levels;
 pub mod engine;
 pub mod error;
 pub mod persona;
 pub mod phoneme_tokens;
 pub mod pipeline;
+pub mod style_matrix;
 pub mod state;
 pub mod synthesis;
 pub mod text_normalization;
 pub mod wav;
 
+pub use audio_levels::{LoudnessApplied, LoudnessSpec};
 pub use engine::{VoiceEngine, VoiceEngineRegistry};
 pub use error::{VoiceError, VoiceErrorCode, VoiceResult};
 pub use persona::{Persona, PersonaRuntime};

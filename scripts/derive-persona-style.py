@@ -71,6 +71,10 @@ def main() -> int:
                     help="post-stage loudness target; the spec's `Energy` has no model input, so gain is the "
                          "honest approximation and it also prevents the clipping this survey found in 8 voices")
     ap.add_argument("--peak-ceiling", type=float, default=0.98)
+    ap.add_argument("--max-gain-db", type=float, default=12.0,
+                    help="refuse to amplify more than this: normalising a near-silent clip to a "
+                         "loud target otherwise raises the noise floor by hundreds of dB "
+                         "(vocal-core's LoudnessSpec::DEFAULT_MAX_GAIN_DB is the same number)")
     ap.add_argument("--report", action="store_true", help="also print the interpolation verdict lines")
     args = ap.parse_args()
 
@@ -130,14 +134,29 @@ def main() -> int:
         f = pcm.astype("float64") / 32768.0
         rms_now = float(np.sqrt(np.mean(f * f))) or 1e-9
         peak_now = float(np.max(np.abs(f))) or 1e-9
-        want = 10.0 ** (args.target_dbfs / 20.0)
-        gain = min(want / rms_now, args.peak_ceiling / peak_now)
+        # Mirrors `crates/vocal-core/src/audio_levels.rs::plan` step for step: silence is left
+        # alone instead of dividing, then the ceiling and the gain cap each get to veto the target.
+        if rms_now == 0.0 or peak_now == 0.0:
+            gain, ceiling_limited, gain_limited = 1.0, False, False
+        else:
+            want = 10.0 ** (args.target_dbfs / 20.0)
+            by_target, by_ceiling = want / rms_now, args.peak_ceiling / peak_now
+            gain = min(by_target, by_ceiling)
+            ceiling_limited = by_ceiling < by_target - 1e-12
+            cap = 10.0 ** (args.max_gain_db / 20.0)
+            gain_limited = gain > cap
+            if gain_limited:
+                gain = cap
         pcm = np.clip(np.floor(f * gain * 32767.0), -32768, 32767).astype("<i2")
         got = vm.measure(pcm, n_tokens)
         got.update({"voice": f"blend:{args.persona}", "weight": 1.0, "infer_s": round(infer, 2)})
-        limited = gain < want / rms_now - 1e-9
-        print(f"  loudness: {before['level_dbfs']} -> {got['level_dbfs']} dBFS (gain {20*float(np.log10(gain)):+.1f} dB, "
-              f"peak {got['peak']:.3f}{' — held at the ceiling, so the target was unreachable without clipping' if limited else ''})")
+        notes = []
+        if ceiling_limited:
+            notes.append("peak ceiling held it back; the target was unreachable without clipping")
+        if gain_limited:
+            notes.append(f"amplification capped at {args.max_gain_db:+.1f} dB; this clip is too quiet to normalise honestly")
+        print(f"  loudness: {before['level_dbfs']} -> {got['level_dbfs']} dBFS (gain {20*float(np.log10(max(gain, 1e-12))):+.1f} dB, "
+              f"peak {got['peak']:.3f}{'; ' + ', '.join(notes) if notes else ''})")
         # The table above intentionally shows the *pre*-normalisation numbers for the sources, so
         # the gain applied here stays attributable; only the blend row changes after it.
 

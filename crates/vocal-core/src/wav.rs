@@ -8,9 +8,16 @@ use crate::error::{VoiceError, VoiceErrorCode, VoiceResult};
 use crate::synthesis::SynthesisResponse;
 use std::path::Path;
 
-/// Interpret a little-endian `f32` PCM buffer as 16-bit PCM bytes.
+/// Interpret a little-endian `f32` PCM buffer as 16-bit PCM bytes, leniently.
 ///
-/// Input is assumed to be in `[-1.0, 1.0]`; values outside that range are clamped.
+/// The scale is `clamp(floor(x * 32767), -32768, 32767)` via [`crate::audio_levels`], which owns the
+/// rule. It used to be `.round()` here, and that single character was why a Rust engine could never
+/// have reproduced `assets/offline-spike/*.wav` bit for bit: the reference export floors, and
+/// rounding moves up to one sample in every `[-0.5, -1e-5]`-ish neighbourhood. `tests/dsp_parity.rs`
+/// pins the current rule against the graph's own float output.
+///
+/// Values outside `[-1.0, 1.0]` saturate. Use [`response_to_wav`] for engine output: it refuses
+/// non-finite samples instead of quietly encoding a rail.
 pub fn f32_bytes_to_pcm16(pcm_f32: &[u8]) -> Vec<u8> {
     // as_chunks::<4>() instead of chunks_exact(4): same semantics, and the discarded tail
     // is named so the intent is legible. A short buffer means a truncated sample, which we
@@ -19,8 +26,7 @@ pub fn f32_bytes_to_pcm16(pcm_f32: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(chunks.len() * 2);
     for chunk in chunks {
         let sample = f32::from_le_bytes(*chunk);
-        let scaled = (sample * 32767.0).clamp(-32768.0, 32767.0).round() as i16;
-        out.extend_from_slice(&scaled.to_le_bytes());
+        out.extend_from_slice(&crate::audio_levels::scale_to_i16(sample, 1.0).to_le_bytes());
     }
     out
 }
@@ -72,8 +78,16 @@ pub fn response_to_wav(response: &SynthesisResponse) -> VoiceResult<Vec<u8>> {
         ));
     }
 
-    let pcm16 = f32_bytes_to_pcm16(&response.audio);
-    Ok(encode_wav_mono16(&pcm16, response.metadata.sample_rate))
+    // Decode, then encode strictly: a waveform containing NaN or infinity is a broken model run,
+    // and silence or full-scale rails would make it look like a quiet or loud utterance.
+    let (chunks, _trailing) = response.audio.as_chunks::<4>();
+    let samples: Vec<f32> = chunks.iter().map(|chunk| f32::from_le_bytes(*chunk)).collect();
+    let pcm16 = crate::audio_levels::encode_strict(&samples, 1.0)?;
+    let mut pcm16_bytes = Vec::with_capacity(pcm16.len() * 2);
+    for sample in &pcm16 {
+        pcm16_bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    Ok(encode_wav_mono16(&pcm16_bytes, response.metadata.sample_rate))
 }
 
 /// Write a response as a WAV file.
@@ -113,8 +127,11 @@ mod tests {
         buf.extend_from_slice(&8.0f32.to_le_bytes());
         let out = f32_bytes_to_pcm16(&buf);
         assert_eq!(i16::from_le_bytes([out[0], out[1]]), 32767);
-        assert_eq!(i16::from_le_bytes([out[2], out[3]]), 16384);
+        // 0.5 * 32767 = 16383.5, and flooring gives 16383 — not the 16384 the old `.round()`
+        // produced. Both are "right" as audio; only one reproduces the reference bytes.
+        assert_eq!(i16::from_le_bytes([out[2], out[3]]), 16383);
         assert_eq!(i16::from_le_bytes([out[4], out[5]]), 32767);
+        assert_eq!(i16::from_le_bytes([out[2], out[3]]), crate::audio_levels::to_pcm16(&[0.5])[0]);
     }
 
     #[test]

@@ -118,11 +118,16 @@ Compilable workspace, honest docs, `REAL_SYNTHESIS_AVAILABLE`, enforced pack lim
 `docs-truth` CI gate. Exit: `cargo build --workspace --all-targets` green; CI green.
 
 **Step 1 — ONE real sentence of audio (days, not quarters).**
-*Status 2026-09-03: unblocked and specified — the sentence exists (see the spike doc and
-`assets/offline-spike/`), the graph contract and voice layout are pinned by
-`crates/vocal-core/tests/fixtures/kokoro/` + `kokoro_reference.rs`, and `--features piper`
-has a measured target. What remains is the Rust `ort` call itself, which needs a machine
-with crates.io.*
+*Status 2026-09-03 (later the same day): the deterministic half has landed. Everything the engine
+must do around the graph is now Rust and CI-tested — `style_matrix.rs` (510×256 LE decode, the
+row-index rule, exact-size rejection), `audio_levels.rs` (floor conversion + loudness with a peak
+ceiling and a max-gain cap), and `tests/dsp_parity.rs`, which grades both rules against
+`tests/fixtures/kokoro/dsp_parity.json`: the raw float32 output of the very run that produced
+`assets/offline-spike/af_heart-en_us.wav`, so passing means the crate reproduces committed reference
+audio sample-for-sample with no tolerance anywhere. That also fixed a live bug: `wav.rs` scaled with
+`.round()` where the reference floors, i.e. the "already implemented and tested" item 4 below was
+**not** bit-compatible with our own evidence. What remains is the `ort` session call itself, which
+needs a machine with crates.io; CI's `--all-features` lint job compiles these modules today.*
 Accept `ADR-001` (Piper for T0). Then, in `PiperEngine` behind `--features piper`:
 1. `ort::Environment` + `Session` load from bytes already in the `.cvpack` (never a path
    fetch — `fetch-models` stays off; it is now removed from the workspace manifest).

@@ -203,7 +203,27 @@ that difference by shipping `bobo` (blended) next to `bobo-solo` (control).
    refusing these bytes as a `real` pack. The **recipe JSONs** are committable and useful; the
    **vectors** become shippable only after path C or a cleared upstream licence.
 
-## 6. Next steps this unlocks
+## 6. Follow-up: the loudness rule became Rust, and grew a guard
+
+`--target-dbfs` is no longer only a script feature. `crates/vocal-core/src/audio_levels.rs`
+implements the same decision — `gain = min(target_linear / rms, ceiling / peak)` — and
+`tests/dsp_parity.rs` grades it against the graph's own float output, with the peak-ceiling invariant
+asserted in samples. Two things came out of building that parity:
+
+* **A cap was missing, in both implementations.** The fixture generator first picked a *silent*
+  512-sample window and reported a well-formed gain of **+147.94 dB**: "normalise silence to
+  −21 dBFS" literally means "raise the noise floor by twelve orders of magnitude", which on a speaker
+  is a puff of quantisation mush. So `LoudnessSpec::max_gain_db` (12 dB) caps *amplification* only —
+  attenuation is always safe — a zero-RMS buffer is left at unity instead of dividing by it, and
+  `derive-persona-style.py --max-gain-db` mirrors it. Re-rendering Tara's cast afterwards produced a
+  bit-identical WAV (`7eeb9b57df380e96…`), which is how we know the guard binds on nothing that was
+  already sane.
+* **Flooring makes the ceiling asymmetric by one LSB.** `floor(-0.9 × (0.5/0.9) × 32767)` is −16384
+  where the positive side gives +16383. That is inherent to flooring and the reference has it too, so
+  tests bound peaks at `floor(ceiling × 32767) + 1` and say why, instead of asserting a rule no
+  implementation follows.
+
+## 7. Next steps this unlocks
 
 1. **Get a verdict on the clips.** They cost nothing and they settle whether this tier of voice is
    what "very good" means — the open product question ahead of all engineering.

@@ -37,6 +37,7 @@ persona's target and the peak is held at 0.98, because the 54-voice survey found
 | Phonemiser, two English clips + Hindi | espeak-ng (`en-us`, `en`, `hi`) via the `piper-tts` wheel — **GPL-3 data; do not link it from a non-GPL app** |
 | Phonemiser, `open-phonemizer-en_us.wav` | 274,927-entry lexicon + 61 MB G2P graph from `expo-open-phonemizer@1.0.1` (MIT package) — no GPL component in that run |
 | Reproduce | `scripts/fetch-offline-model.py`, `scripts/extract-open-phonemizer.py`, `scripts/spike-kokoro-offline.py`, `scripts/survey-persona-voices.py`, `scripts/derive-persona-style.py` (metrics shared in `scripts/voice_metrics.py`) |
+| Parity fixtures | `scripts/make-dsp-parity-fixtures.py` turns the float input of `af_heart-en_us.wav` into `crates/vocal-core/tests/fixtures/kokoro/dsp_parity.json`, which is how `vocal-core`'s floor and loudness rules get graded in CI with no model present |
 
 ## What these clips are not
 

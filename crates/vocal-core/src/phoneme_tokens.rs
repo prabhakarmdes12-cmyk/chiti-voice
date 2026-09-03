@@ -38,8 +38,10 @@ pub const STYLE_DIM: usize = 256;
 pub const PAD: u16 = 0;
 /// The largest id in use (177) — deliberately not `vocab.len() - 1`.
 pub const MAX_ID: u16 = 177;
-/// `float32` samples the reference `waveform` is scaled by: 32767, and `wav.rs` **rounds**
-/// where the upstream JS floors — a <= 1 LSB per-sample difference, noted rather than hidden.
+/// `float32` samples the reference `waveform` is scaled by: 32767. The reference floors after
+/// scaling, and `audio_levels::scale_to_i16` now does exactly that; `wav.rs` used to round, which
+/// was a permanent <= 1 LSB difference against every WAV in this repo, so the rule lives in one
+/// place and `tests/dsp_parity.rs` grades it against real graph output instead of an example.
 pub const PCM_SCALE: f32 = 32767.0;
 
 /// `SYMBOLS[id]` is the character for that id, or `'\0'` for an id the vocab does not use.

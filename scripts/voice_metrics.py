@@ -64,9 +64,10 @@ def encode_ids(phonemes: str, vocab: dict[str, int], maxlen: int, pattern: "re.P
 def pcm_from_waveform(waveform: np.ndarray) -> np.ndarray:
     """float [-1, 1] -> int16, exactly as the reference export's player does it.
 
-    The upstream JS floors; `crates/vocal-core/src/wav.rs` rounds. The difference is under one
-    LSB and is not worth an argument, but it *is* worth stating, because a test that claims
-    bit-exactness against a JS reference would then be false.
+    The upstream JS floors, and so does `crates/vocal-core/src/audio_levels.rs::scale_to_i16` — it
+    used to round in `wav.rs`, which was a permanent sub-LSB disagreement with every WAV in this
+    repo. The rule is now pinned by `crates/vocal-core/tests/dsp_parity.rs`, whose input is the
+    float output of the run that produced `assets/offline-spike/af_heart-en_us.wav`.
     """
     return np.clip(np.floor(np.asarray(waveform).reshape(-1) * 32767.0), -32768, 32767).astype("<i2")
 
