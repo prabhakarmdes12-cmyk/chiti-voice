@@ -5,6 +5,16 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+/// The only manifest schema version this runtime reads.
+///
+/// Exact match rather than a semver range, on purpose: no `semver` crate is in `Cargo.toml`, and
+/// accepting a *range* would mean a validation path per version -- a `0.x` reader would happily parse a
+/// `2.0` manifest and quietly ignore the fields it has never heard of, which is how a persona ends up
+/// running on defaults nobody chose. A pack that declares anything else fails at load, naming both sides
+/// (`security.rs::validate_manifest`), because a pack that cannot load is a support ticket and a pack
+/// that loads *wrong* is a silent product defect.
+pub const SUPPORTED_SCHEMA_VERSION: &str = "1.0.0";
+
 /// The manifest.json structure inside a .cvpack file
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PackManifest {

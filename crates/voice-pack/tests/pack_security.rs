@@ -132,6 +132,18 @@ fn wrong_schema_version_is_rejected() {
         msg.contains("schema version") || msg.contains("schema_version"),
         "unexpected: {msg}"
     );
+    // INVARIANTS.md asks for "a clear error message stating the version mismatch". Naming the rule
+    // is not naming the mismatch, so both sides have to appear: what the pack declares (2.0.0, set by
+    // scripts/make-test-fixtures.py) and what this runtime reads. An operator holding a rejected pack
+    // should be able to decide between "rebuild the pack" and "upgrade the runtime" from this string.
+    assert!(
+        msg.contains("2.0.0"),
+        "the rejection must name the version the pack declares: {msg}"
+    );
+    assert!(
+        msg.contains(voice_pack::SUPPORTED_SCHEMA_VERSION),
+        "the rejection must name the version the runtime accepts: {msg}"
+    );
 }
 
 #[test]

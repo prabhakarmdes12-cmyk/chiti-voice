@@ -160,13 +160,13 @@ Determinism enables reliable testing, golden-file regression tests, quality benc
 
 **Test Approach:**
 
-- `tests/determinism_test.rs`: Synthesize the same sentence 10 times consecutively with the same parameters. Compare all outputs using `assert_eq!` on the raw `Float32Array`. All 10 must be bit-identical.
-- Run across VOCAL NANO, VOCAL LITE, VOCAL STUDIO model tiers.
+- `crates/vocal-core/tests/determinism_test.rs`: renders one sentence ten times through `MockEngine`, comparing audio bytes and reported metadata each time, renders again on a *second* engine instance (state captured at `initialize()` survives a single-instance loop), re-runs `encode` and `plan_pieces` comparing tokens, units and style rows, and scans the shipped half of each deterministic module for a clock, an RNG or a pid.
+- Not covered, because the things do not exist yet: the `Float32Array` golden comparison against real inference, and the run across VOCAL NANO / LITE / STUDIO tiers. `crates/vocal-core/tests/dsp_parity.rs` grading byte-exact DSP against recorded fixtures is the closest substitute until Step 2 lands.
 - Run on Linux x86_64 CI environment (determinism is per-platform; cross-platform bit-identity is not required).
 
 **Enforcement Mechanism:**
 
-- ONNX Runtime is run with deterministic execution flags where available.
+- ONNX Runtime is run with deterministic execution flags where available. Not applicable yet: no ONNX execution exists in this crate (`REAL_SYNTHESIS_AVAILABLE` is `false`), so there is nothing to configure -- `docs/ROADMAP_EMBEDDED.md` §2 is where this becomes real.
 - No `rand` crate usage anywhere in the synthesis pipeline (G2P, prosody, engine, audio). Only the `requestId` generator uses randomness, and it is explicitly outside the pipeline.
 - CI golden-file test: A known input produces a known SHA-256 hash of output audio. Fails the build if hash changes.
 
@@ -338,15 +338,12 @@ Without limits, a single malicious or buggy caller can exhaust device memory, st
 
 **Test Approach:**
 
-- `tests/resource_limits_test.rs`: Submit a request with 10,001 characters. Assert `TextTooLongError`.
-- Submit 5 rapid concurrent requests with concurrency limit set to 4. Assert the 5th returns `QueueFullError`.
-- Memory profiling test: Run 100 synthesis cycles with NANO model. Assert peak RSS stays within 2× the model size.
+- Planned, not written: the 10,001-character request, the 5-concurrent-requests case and the peak-RSS profile all need a request entry point and a real engine, so `tests/resource_limits_test.rs` does not exist. The pack-side limits are tested today in `crates/voice-pack/tests/pack_security.rs`.
 
 **Enforcement Mechanism:**
 
-- `VocalClient` validates text length before dispatching to the engine.
-- `queue.rs` in the Local Service uses a bounded queue (tokio `mpsc` with capacity).
-- Resource limit constants are defined in a single configuration module — not scattered across the codebase.
+- Enforced today for the *pack* side of the same limit: `PackLimits` in `crates/voice-pack/src/security.rs` caps `max_file_bytes`, `max_total_bytes`, `max_compression_ratio` and `max_file_count`, and the embedded profile is deliberately stricter than the desktop one. Verified by `zip_bomb_is_rejected_before_inflation`, `embedded_limits_are_stricter_than_desktop` and `limits_profiles_are_sane` in `crates/voice-pack/tests/pack_security.rs`.
+- Not implemented for the *request* side, and this document will not pretend otherwise: there is no `VocalClient`, no `queue.rs`, no text-length constant, and neither `TextTooLongError` nor `QueueFullError` exists in `crates/vocal-core/src/error.rs`. The statement above is a requirement on the shipped runtime, not a description of this checkout.
 
 ---
 
@@ -360,7 +357,7 @@ Without limits, a single malicious or buggy caller can exhaust device memory, st
 
 **Statement:**
 
-The Chiti Voice SDK (TypeScript) MUST follow semantic versioning. A MINOR version bump MUST NOT remove or change any existing public API. A MAJOR version bump MUST be accompanied by a migration guide. Voice packs include a `manifestVersion` field; the runtime MUST reject packs whose `manifestVersion` is incompatible with the running runtime version, with a clear error message stating the version mismatch.
+The Chiti Voice SDK (TypeScript) MUST follow semantic versioning. A MINOR version bump MUST NOT remove or change any existing public API. A MAJOR version bump MUST be accompanied by a migration guide. Voice packs declare a `schema_version` field (the manifest key as implemented; this document formerly called it `manifestVersion`); the runtime MUST reject packs whose `schema_version` it does not read, with an error message naming both versions.
 
 **Rationale:**
 
@@ -368,12 +365,11 @@ Applications that integrate the SDK will not all upgrade simultaneously. Breakin
 
 **Test Approach:**
 
-- `tests/version_compat_test.rs`: Load a pack with `manifestVersion: "999.0.0"`. Assert `IncompatibleManifestVersionError` with a message containing both the pack version and the runtime version.
-- TypeScript API test: Export the SDK type surface. Snapshot it. Assert on each MINOR release that no existing exported type has been removed or changed (using `api-extractor` or equivalent).
+- `crates/voice-pack/tests/pack_security.rs::wrong_schema_version_is_rejected` loads `tests/fixtures/bad_schema.cvpack` (which declares `schema_version: "2.0.0"`) and asserts the rejection names both the version the pack declares and the version this runtime reads. `tests/version_compat_test.rs` does not exist; the type-surface snapshot is not implementable either, because the SDK is a specification in `docs/api/TYPESCRIPT_API.md` with no package to export.
 
 **Enforcement Mechanism:**
 
-- `manifest.rs` includes a semver-compatible version check using the `semver` crate.
+- `crates/voice-pack/src/manifest.rs` defines `SUPPORTED_SCHEMA_VERSION` and `security.rs::validate_manifest` compares it exactly. There is no `semver` crate in any `Cargo.toml`: range matching would require a validation path per version, and a reader that parses a newer manifest while ignoring the keys it does not know is worse than one that refuses it.
 - `api-extractor` or `tsd` runs in CI to detect breaking TypeScript API changes.
 - Changelog must be updated as part of any release PR.
 
@@ -442,7 +438,10 @@ they are not lost -- they are simply not enforced here:
 - Language-Voice Separation · Engine Interface · No Direct Backend Instantiation
 - Persona Config Separation · Loopback Only and No Telemetry (each a specific clause of
   VOICE_INV_007) · Pack Integrity (enforced as part of VOICE_INV_008 by `validate_files`)
-- No Executable Content · RTF Bound (the only exit criterion in the PRD with no implementation
+- No Executable Content (implemented, narrower than the words suggest: `crates/voice-pack/src/security.rs` rejects archive entries by
+  *extension*, and `executable_content_is_rejected` covers it, so an extensionless ELF named `payload` would pass --
+  closing that gap means reading the ZIP mode bits or sniffing magic bytes, neither of which exists yet)
+- RTF Bound (the only exit criterion in the PRD with no implementation
   or measurement behind it: RTF figures in `docs/research/` are x86-container numbers, not the
   reference hardware)
 

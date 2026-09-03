@@ -15,6 +15,7 @@ pub use format::VoicePack;
 pub use loader::{LoadError, LoadResult, PackLoader, MANIFEST_ENTRY};
 pub use manifest::{
     ChunkingConfig, FileType, IntentProfile, LoudnessConfig, PackFile, PackManifest,
+    SUPPORTED_SCHEMA_VERSION,
     PersonaConfig, ProvenanceInfo,
     StyleConfig, StyleWeight, DEFAULT_LOUDNESS_TARGET_DBFS, DEFAULT_MAX_GAIN_DB, DEFAULT_PEAK_CEILING,
     STYLE_VECTOR_BYTES,

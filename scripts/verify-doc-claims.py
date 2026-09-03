@@ -67,15 +67,12 @@ NEGATIONS = (
 
 # Paths an author has declared as intentionally-not-here, with the reason that makes it legitimate.
 PLANNED: dict[str, str] = {
-    "tests/determinism_test.rs": "invariant verification plan (VOICE_INV_005 Deterministic Core); test not yet written",
     "tests/degradation_test.rs": "invariant verification plan (VOICE_INV_005); test not yet written",
     "tests/interruptibility_test.rs": "invariant verification plan (VOICE_INV_009); test not yet written",
     "tests/offline_test.rs": "invariant verification plan (VOICE_INV_001 Offline Independence); test not yet written",
     "tests/pack_verify_test.rs": "invariant verification plan (VOICE_INV_008 Voice Provenance); test not yet written",
     "tests/persona_independence_test.rs": "invariant verification plan (VOICE_INV_004 Persona Independence); test not yet written",
-    "tests/resource_limits_test.rs": "invariant verification plan (VOICE_INV_011); test not yet written",
     "tests/stream_safety_test.rs": "invariant verification plan (VOICE_INV_010); test not yet written",
-    "tests/version_compat_test.rs": "invariant verification plan (VOICE_INV_012 Version Compatibility); test not yet written",
     "packages/chiti-voice-sdk/src/types.ts": "the SDK is specified in docs/api, not built",
     "docs/CVPACK_SPECIFICATION.md": "documented as a planned companion to the .cvpack format",
 }

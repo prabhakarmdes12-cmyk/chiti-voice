@@ -16,7 +16,7 @@
 //!    ignored by an allowlist, so a pack cannot smuggle `payload.sh` alongside a
 //!    valid model.
 
-use crate::manifest::{PackFile, PackManifest};
+use crate::manifest::{PackFile, PackManifest, SUPPORTED_SCHEMA_VERSION};
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
 
@@ -115,10 +115,12 @@ impl PackValidator {
     ///
     /// Runs before any archive content is decompressed.
     pub fn validate_manifest(&self, manifest: &PackManifest) -> Result<(), String> {
-        if manifest.schema_version != "1.0.0" {
+        if manifest.schema_version != SUPPORTED_SCHEMA_VERSION {
+            // VOICE_INV_012's test approach asks for a message that states the mismatch, so both
+            // numbers have to appear: "unsupported" alone tells a user nothing about what to change.
             return Err(format!(
-                "Unsupported schema version: {}",
-                manifest.schema_version
+                "Unsupported schema version: {} (this runtime reads {})",
+                manifest.schema_version, SUPPORTED_SCHEMA_VERSION
             ));
         }
 

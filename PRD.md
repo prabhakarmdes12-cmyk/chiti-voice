@@ -512,7 +512,7 @@ These invariants are non-negotiable architectural rules. Violation of any invari
 | -- | Loopback Only (PRD-only, a clause of VOICE_INV_007) | The local daemon MUST bind only to `127.0.0.1`. | Yes (network inspection) |
 | -- | No Telemetry (PRD-only, a clause of VOICE_INV_007) | The runtime MUST emit zero outbound telemetry in any build configuration. | Yes (network audit) |
 | -- | Pack Integrity (PRD-only, enforced by VOICE_INV_008) | A voice pack with a failed checksum MUST be rejected before any model files are loaded. | Yes |
-| -- | No Executable Content (PRD-only) | Voice packs MUST NOT contain any executable files; any such pack is rejected. | Yes |
+| -- | No Executable Content (PRD-only) | Voice packs MUST NOT contain any executable files; rejected by extension today (see `security.rs`), so an extensionless binary still loads. | Yes |
 | -- | RTF Bound (PRD-only) | No production voice pack MAY ship with an RTF >= 1.0 on reference hardware. | Yes (benchmark gate) |
 
 ---
