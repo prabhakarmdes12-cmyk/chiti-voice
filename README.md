@@ -183,6 +183,7 @@ Three persona *specifications* exist. Three voices do not — persona ≠ model.
 | [`docs/api/HTTP_API.md`](./docs/api/HTTP_API.md) | Local daemon API (**not implemented**) |
 | [`docs/api/TYPESCRIPT_API.md`](./docs/api/TYPESCRIPT_API.md) | SDK API (**not implemented**) |
 | [`docs/ROADMAP_EMBEDDED.md`](./docs/ROADMAP_EMBEDDED.md) | **Start here**: plan for real, offline, device-sized voice |
+| [`docs/HANDOFF_LOCAL_AGENT.md`](./docs/HANDOFF_LOCAL_AGENT.md) | Handoff for someone with a Rust toolchain: what to run, what binds, what is open |
 | [`PRD.md`](./PRD.md) | Product requirements |
 | [`LICENSE`](./LICENSE) | Proprietary notice + third-party obligations (draft — needs review) |
 
