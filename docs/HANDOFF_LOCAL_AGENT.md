@@ -35,12 +35,20 @@ ways a fresh reader keeps misreading, so state it plainly:
   that does not exist is the exact failure this repo had, and `scripts/verify-doc-claims.py` exists to
   catch it.
 
-Fetch the state:
+Fetch the state. This work lives on a session branch that is merged into `main` when the owner accepts
+PR #1, so try the default branch first and fall back to the branch name:
 
 ```bash
+git pull origin main                      # if PR #1 has landed, this is the whole tree
+# otherwise:
 git fetch origin arena/01a06392-chiti-voice
-git switch -c chiti-local --track origin/arena/01a06392-chiti-voice   # or: git checkout arena/...
+git switch -c chiti-local --track origin/arena/01a06392-chiti-voice
+git rev-parse HEAD                        # expect 5cd1e80 or a descendant
 ```
+
+If neither is convenient, the offline transfer (a self-contained `git bundle`, a patch series, and a
+sha256 to check them with) is regenerated on request -- it was last built at `5cd1e80` and lived at
+`target/agent-handoff/` in the sandbox, which is gitignored, so it is not in the clone you are reading.
 
 ## 1. Make the tree honest about formatting
 
