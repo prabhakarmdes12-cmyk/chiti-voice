@@ -66,7 +66,7 @@ pub fn split_for_overrides(text: &str, overrides: &HashMap<String, String>) -> V
     let mut pending = String::new();
     let mut word = String::new();
 
-    let mut flush_word = |pending: &mut String, word: &mut String, out: &mut Vec<Segment>| {
+    let flush_word = |pending: &mut String, word: &mut String, out: &mut Vec<Segment>| {
         if word.is_empty() {
             return;
         }

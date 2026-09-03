@@ -224,6 +224,15 @@ pub struct ProvenanceInfo {
     pub signature: Option<String>,
     /// Signature status
     pub signature_status: Option<String>,
+    /// What the pack author needs the next person to know, in the pack's own words: what is
+    /// unverified, what must be checked before release.
+    ///
+    /// This is not decoration. The shipped packs have always written a `notes` field carrying the
+    /// licence warning (Piper's phonemiser is GPL, voice models are licensed per model), and serde
+    /// dropped it on load because no such field existed — so the one sentence a release manager most
+    /// needed was invisible exactly where it mattered: in anything that loads a pack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub notes: Option<String>,
 }
 
 impl PackManifest {

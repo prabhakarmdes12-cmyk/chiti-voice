@@ -118,7 +118,9 @@ def build_persona(persona: str, md: str, recipe: dict, existing: dict) -> dict:
         "id": persona,
         "display_name": existing.get("display_name") or PERSONA_DOC[persona].title(),
         "description": existing.get("description", ""),
-        "language": existing.get("language", "en-IN"),
+        # NB: no `language` here on purpose. It is a pack-level claim (`supported_languages`), and a
+        # persona key that no Rust field reads would be the same kind of decoration this commit is
+        # removing elsewhere.
         "default_rate": round(base["speed"], 3),
         "default_pitch": round(base["pitch"], 3),
         "pitch_baked_into_style": pitch_baked,

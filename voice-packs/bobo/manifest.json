@@ -30,7 +30,6 @@
     "id": "bobo",
     "display_name": "Bobo",
     "description": "Playful, expressive fictional non-child character for high-energy, engaging content",
-    "language": "en-IN",
     "default_rate": 1.15,
     "default_pitch": 0.3,
     "pitch_baked_into_style": true,

@@ -510,6 +510,7 @@ mod tests {
             files,
             persona: None,
             provenance: Some(ProvenanceInfo {
+                notes: None,
                 training_data_statement: Some("12 h studio English".to_string()),
                 model_license: Some("MIT".to_string()),
                 consent_obtained: Some(true),

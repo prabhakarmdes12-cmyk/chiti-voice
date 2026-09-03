@@ -580,6 +580,9 @@ async fn cmd_verify(dir: &Path, limits: &PackLimits, pack_path: &Path) -> Result
     }
 
     if let Some(prov) = manifest.provenance.as_ref() {
+        if let Some(note) = prov.notes.as_deref() {
+            println!("  provenance note      {note}");
+        }
         println!(
             "  provenance       consent_obtained={:?} model_license={:?} signature={:?}",
             prov.consent_obtained, prov.model_license, prov.signature_status

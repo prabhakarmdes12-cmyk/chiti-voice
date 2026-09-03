@@ -177,13 +177,17 @@ impl PersonaRuntime {
         let persona = self.get_persona(persona_id)?;
         let profile = intent.and_then(|name| persona.intent_profiles.get(name));
 
-        let energy = profile.map_or(1.0, |p| p.energy);
+        // 0.5 is neutral: with no intent (or an unknown one) the persona's declared target must
+        // reach the gain stage untouched. `map_or(1.0, ..)` here asked for +6 dB on every plain
+        // sentence, which the persona docs never claimed.
+        let energy = profile.map_or(0.5, |p| p.energy);
         Some(Prosody {
             speed: profile.map_or(persona.default_rate, |p| p.rate),
-            // Energy is a *relative* request, so it scales the persona's declared target rather
-            // than replacing it: energy 1.0 is neutral, and the endpoints of the 0.0-1.0 range move
-            // the target by 6 dB either way. That mapping is documented in PERSONA_STYLE_VECTORS.md
-            // because it is an approximation the specs never had to justify.
+            // Energy is a *relative* request, so it offsets the persona's declared target rather
+            // than replacing it: 0.5 is neutral and the endpoints of the 0.0-1.0 range move the
+            // target by 6 dB either way (12 dB of swing). That mapping is documented in
+            // PERSONA_STYLE_VECTORS.md because it is an approximation the specs never had to
+            // justify, and it is the whole implementation of `Energy` until something better exists.
             loudness_target_dbfs: persona
                 .loudness
                 .map(|l| l.target_dbfs + (energy - 0.5) * 12.0),

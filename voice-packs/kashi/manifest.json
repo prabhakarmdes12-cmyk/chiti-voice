@@ -29,7 +29,6 @@
     "id": "kashi",
     "display_name": "Kashi",
     "description": "Calm, measured Hindi male-presenting voice with Sanskrit vocabulary support",
-    "language": "en-IN",
     "default_rate": 0.92,
     "default_pitch": -0.1,
     "pitch_baked_into_style": true,
