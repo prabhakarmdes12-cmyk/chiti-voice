@@ -275,7 +275,7 @@ mod tests {
     /// Vocab-safe ASCII phoneme-ish runs: every character here is in `SYMBOLS`, so `units` is the
     /// literal character count and the expectations below are checkable by hand.
     fn words(text: &str) -> Vec<Piece> {
-        text.split_whitespace().map(Piece::phonemes).collect()
+        text.split_whitespace().map(|word| Piece::phonemes(word)).collect()
     }
 
     #[test]
@@ -387,7 +387,7 @@ mod tests {
         let text = err.to_string();
         assert!(text.contains("no chunk boundary"), "{text}");
         assert!(
-            text.contains(&DEFAULT_MAX_UNITS.to_string()),
+            text.contains(DEFAULT_MAX_UNITS.to_string().as_str()),
             "the message must quote the ceiling it exceeded: {text}"
         );
     }
