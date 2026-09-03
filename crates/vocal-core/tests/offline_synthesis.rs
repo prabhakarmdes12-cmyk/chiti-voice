@@ -369,3 +369,44 @@ fn walk(dir: &str) -> Vec<String> {
     }
     out
 }
+
+/// The one place the pack format and the engine's vocabulary are checked against each other.
+///
+/// `voice-pack` cannot do this: it has no view of the symbol table, and shouldn't -- IPA validity is the
+/// tokenizer's business. But an override is a pack's *assertion about a sound*, so a value the table
+/// cannot spell is a claim nothing honours, and `encode` (which pads rather than drops, as upstream
+/// does) would put a silence-shaped token where the pack said /g/. Every tracked pack is therefore
+/// checked against the table this crate actually carries, here, where a regression fails the gate rather
+/// than the ear.
+#[test]
+fn shipped_personas_can_spell_their_own_overrides() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../voice-packs");
+    let mut dirs: Vec<_> = std::fs::read_dir(&root)
+        .unwrap_or_else(|e| panic!("{} must exist: {e}", root.display()))
+        .filter_map(|entry| entry.ok().map(|entry| entry.path()))
+        .filter(|path| path.is_dir())
+        .collect();
+    dirs.sort();
+
+    let mut checked = 0usize;
+    for dir in dirs {
+        let manifest_path = dir.join("manifest.json");
+        let Ok(text) = std::fs::read_to_string(&manifest_path) else {
+            continue;
+        };
+        let manifest: voice_pack::PackManifest = serde_json::from_str(&text)
+            .unwrap_or_else(|e| panic!("{} must parse: {e}", manifest_path.display()));
+        let Some(persona) = manifest.persona.as_ref() else {
+            continue;
+        };
+        vocal_core::Persona::from_pack(persona)
+            .check_overrides_encodable()
+            .unwrap_or_else(|e| panic!("{}: {e}", manifest_path.display()));
+        checked += 1;
+    }
+    assert!(
+        checked >= 3,
+        "tara, kashi and bobo all declare personas, so a run that checked {checked} of them is not \
+         exercising this rule at all"
+    );
+}

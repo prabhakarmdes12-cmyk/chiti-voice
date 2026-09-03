@@ -85,6 +85,58 @@ impl Persona {
         }
     }
 
+    /// Refuse a persona whose own pronunciation fixes this engine cannot spell.
+    ///
+    /// `pronunciation_overrides` exists for the words graph2pilot gets wrong -- the product's own name is
+    /// the reason -- so a value the tokenizer table cannot represent is not a soft edge case: the engine
+    /// would emit a pad token exactly where the pack asserted a sound, which is the failure the field was
+    /// added to prevent. `voice-pack`'s validator cannot catch this (it has no view of the table, by
+    /// design -- IPA validity is the tokenizer's business), and `docs`/`README` claimed the values "are
+    /// checked for encodability in `vocal-core`": this is that check, so the claim is true and the load
+    /// path has one place to call it from.
+    #[must_use]
+    pub fn check_overrides_encodable(&self) -> crate::error::VoiceResult<()> {
+        let mut offenders: Vec<(String, Vec<char>)> = Vec::new();
+        for (word, phonemes) in &self.pronunciation_overrides {
+            let mut unmapped = crate::phoneme_tokens::unmapped_symbols(phonemes);
+            if !unmapped.is_empty() {
+                unmapped.sort();
+                unmapped.dedup();
+                offenders.push((word.clone(), unmapped));
+            }
+        }
+        if offenders.is_empty() {
+            return Ok(());
+        }
+        offenders.sort();
+        let detail = offenders
+            .iter()
+            .map(|(word, chars)| {
+                let listed = chars
+                    .iter()
+                    .map(|c| format!("{c:?} (U+{:04X})", u32::from(*c)))
+                    .collect::<Vec<String>>()
+                    .join(", ");
+                let hint = if chars.contains(&'g') {
+                    " -- this table spells /g/ as script-g U+0261, which is what espeak-style IPA must be mapped to"
+                } else {
+                    ""
+                };
+                format!("{word:?} uses {listed}{hint}")
+            })
+            .collect::<Vec<String>>()
+            .join("; ");
+        Err(crate::error::VoiceError::new(
+            crate::error::VoiceErrorCode::PackInvalidFormat,
+            format!(
+                "persona {:?} declares pronunciation_overrides this engine cannot spell: {detail}. \
+                 The graph would synthesize a pad token in its place, silently replacing the sound the \
+                 override exists to fix.",
+                self.id
+            ),
+        ))
+    }
+
     /// What a non-zero `default_pitch` is allowed to mean here. The pack validator enforces the same
     /// rule; this exists so the engine can assert it once at load time with a message a user reads.
     pub fn pitch_is_honoured(&self) -> bool {
@@ -346,5 +398,45 @@ mod tests {
         assert!(!p.pitch_is_honoured(), "the pack validator is what rejects this, but the engine must be able to say the same thing");
         config.pitch_baked_into_style = true;
         assert!(Persona::from_pack(&config).pitch_is_honoured());
+    }
+
+    #[test]
+    fn an_override_the_table_cannot_spell_is_refused_at_load() {
+        // The shipped value is fine, and saying so keeps the rule from being "everything fails".
+        let clean = Persona::from_pack(&pack_persona());
+        clean.check_overrides_encodable().expect("shipped IPA is spellable");
+
+        // ASCII 'g' is the trap: the table carries script-g (U+0261), so an espeak-style IPA string for
+        // "go" would otherwise synthesize as "o" plus a pad -- the one thing a pronouncer exists to stop.
+        let mut config = pack_persona();
+        config
+            .pronunciation_overrides
+            .insert("go".to_string(), "go\u{028A}".to_string());
+        let err = Persona::from_pack(&config)
+            .check_overrides_encodable()
+            .expect_err("an unspellable override must not load silently");
+        let msg = err.to_string();
+        assert_eq!(err.code(), crate::error::VoiceErrorCode::PackInvalidFormat);
+        assert!(msg.contains("go"), "the message must name the word: {msg}");
+        assert!(msg.contains("U+0261"), "and the replacement it should have used: {msg}");
+
+        // More than one offender, reported together and in a stable order: a pack author fixing this
+        // should see the whole list, not one entry per rebuild.
+        let mut config = pack_persona();
+        config
+            .pronunciation_overrides
+            .insert("go".to_string(), "go\u{028A}".to_string());
+        config
+            .pronunciation_overrides
+            .insert("llan".to_string(), "\u{026C}an".to_string());
+        let msg = Persona::from_pack(&config)
+            .check_overrides_encodable()
+            .expect_err("every offender, not the first one")
+            .to_string();
+        assert!(
+            msg.contains("\"go\"") && msg.contains("\"llan\""),
+            "the whole list, so an author fixes them in one pass: {msg}"
+        );
+        assert!(msg.contains("tara"), "and which persona is at fault: {msg}");
     }
 }

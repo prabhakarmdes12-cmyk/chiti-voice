@@ -72,7 +72,9 @@ pub const SYMBOLS: &[char; 178] = &[
     '\0', '\u{1d7b}',
 ];
 
-/// Look up a character's id. `None` for anything outside the vocab.
+/// Look up a character's id. `None` for anything outside the vocab; [`encode`] turns that
+/// `None` into a [`PAD`] token, exactly as upstream's `vocab.get(c, pad)` does, so an unmapped
+/// character costs a slot without shifting anything.
 ///
 /// The upstream pipeline maps an unmapped character to `pad` instead (`vocab.get(c, pad)`): the
 /// character becomes a [`PAD`] *token*, keeping the sequence's length. This crate's [`encode`] does
@@ -90,21 +92,47 @@ pub fn id_for(ch: char) -> Option<u16> {
     SYMBOLS.iter().position(|&c| c == ch).map(|i| i as u16)
 }
 
-/// Drop every character the vocabulary does not contain (the whitelist's equivalent, §2 above).
+/// Drop every character the vocabulary does not contain.
 ///
-/// Deliberately not what upstream does with an unmapped character — see [`id_for`] for the consequence,
-/// which lands on [`encode`]'s output length and therefore on [`style_row`].
+/// This is NOT what [`encode`] does with an unmapped character, and the two must not be confused:
+/// filtering changes the sequence length, and the style row is the sequence length, so a filter in the
+/// synthesis path moves prosody as well as removing a sound. It survives as a *reporting* helper (a
+/// caller deciding whether a string is spellable at all) and as the fence in
+/// `tests/kokoro_tokens.rs`, which asserts the reference fixtures need no filtering so that the ids
+/// recorded there are comparable with the table as it stands.
 pub fn strip_to_vocab(phonemes: &str) -> String {
     phonemes.chars().filter(|c| id_for(*c).is_some()).collect()
 }
 
-/// `$ seq $` — pad-wrapped, vocabulary-filtered, truncated to [`MAX_TOKENS`].
-/// Input is *phonemes*, not text.
+/// The characters this string uses that the table does not have, deduplicated, in order of first use.
+///
+/// Empty for anything a Kokoro-class graph can spell. Callers that *author* phoneme strings -- a pack's
+/// `pronunciation_overrides`, a hand-written test fixture -- should treat non-empty as an error, because
+/// the synthesiser will not reject those characters, it will pad them: see [`encode`].
+#[must_use]
+pub fn unmapped_symbols(phonemes: &str) -> Vec<char> {
+    let mut seen: Vec<char> = Vec::new();
+    for c in phonemes.chars() {
+        if id_for(c).is_none() && !seen.contains(&c) {
+            seen.push(c);
+        }
+    }
+    seen
+}
+
+/// `$ seq $` — pad-wrapped, truncated to [`MAX_TOKENS`]. Input is *phonemes*, not text.
+///
+/// A character outside the table becomes [`PAD`], which is what the reference does (`vocab.get(c, pad)`)
+/// and therefore what the recorded fixtures were produced by. It used to be filtered out here, which is
+/// a quiet way to change a voice: dropping a character shortens the sequence, and the style row is
+/// selected by sequence length, so every row from the dropped character onward shifted by one. Padded
+/// instead, the row is the caller's length and the divergence disappears; where a string must be
+/// *spellable* rather than merely representable, ask [`unmapped_symbols`] and refuse it at load --
+/// `Persona::check_overrides_encodable` is that check for the one input a pack asserts by name.
 pub fn encode(phonemes: &str) -> Vec<u16> {
-    let kept = strip_to_vocab(phonemes);
-    let mut ids = Vec::with_capacity(kept.chars().count() + 2);
+    let mut ids = Vec::with_capacity(phonemes.chars().count() + 2);
     ids.push(PAD);
-    ids.extend(kept.chars().filter_map(id_for));
+    ids.extend(phonemes.chars().map(|c| id_for(c).unwrap_or(PAD)));
     ids.push(PAD);
     ids.truncate(MAX_TOKENS);
     ids
@@ -148,23 +176,24 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_unmapped_character_costs_a_token_upstream_and_none_here() {
-        // "d-u-with-script-g, u, space, ASCII g": the last character is not in the table, so `encode`
-        // emits one id fewer than the reference would (which keeps it as PAD), and `n_tokens` -- the
-        // style row -- is short by the same one. Numbers rather than prose, because "one character" is
-        // exactly the size of a bug that a later simplification of `strip_to_vocab` would erase.
+    fn an_unmapped_character_becomes_a_pad_token_and_the_row_is_unaffected() {
+        // "d\u{0261}u g": script-g is in the table, ASCII 'g' is not -- which is the trap, because
+        // espeak-style IPA writes /g/ as the ASCII letter. `encode` now behaves like the reference
+        // (`vocab.get(c, pad)`), so the character costs a token instead of vanishing: the sequence keeps
+        // the caller's length, and so does the style row derived from it. Asserted with numbers because
+        // "one character" is exactly what a future refactor of the vocabulary filter would erase, and
+        // because the alternative -- the old behaviour -- shifted every row by one silently.
         let input = "d\u{0261}u g";
         let ids = encode(input);
         assert_eq!(
             ids.len(),
-            input.chars().count() - 1 + 2,
-            "the unmapped 'g' is dropped, so the sequence is one shorter than the caller's characters"
+            input.chars().count() + 2,
+            "an unmapped character must occupy a slot, not shorten the sequence"
         );
-        assert_eq!(
-            n_tokens(&ids) + 1,
-            input.chars().count(),
-            "and the row index is short by the same one, which is why this is audible, not internal"
-        );
+        assert_eq!(ids[input.chars().count()], PAD, "the unmapped 'g' became PAD, in place");
+        assert_eq!(n_tokens(&ids), input.chars().count(), "and the row index is the caller's length");
+        assert_eq!(unmapped_symbols(input), vec!['g'], "which is reportable, and must be reported");
+        assert_eq!(strip_to_vocab(input).chars().count(), 4, "the filter is the other behaviour, kept for reporting");
     }
 
     #[test]

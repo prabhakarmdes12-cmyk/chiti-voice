@@ -181,8 +181,10 @@ pub struct PersonaConfig {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub loudness: Option<LoudnessConfig>,
     /// Word -> phoneme string, for proper nouns the graph2pilot cannot guess ("Chiti" came out as
-    /// `tʃˈaːɾi`). Applied before tokenisation, so the values are checked for encodability in
-    /// `vocal-core` where the vocabulary table lives, not here.
+    /// `tʃˈaːɾi`). Applied before tokenisation, so encodability is checked in
+    /// `vocal-core` where the table lives: `Persona::check_overrides_encodable`, run by the CLI's
+    /// `verify` and against every tracked pack in CI. This crate deliberately does not check it — it has
+    /// no view of the 115 symbols, and inventing a second copy here is how two sources of truth start.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub pronunciation_overrides: HashMap<String, String>,
     /// Intent profiles

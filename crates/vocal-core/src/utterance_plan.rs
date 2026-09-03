@@ -30,7 +30,7 @@
 //! utterance with a different style row.
 
 use crate::error::{VoiceError, VoiceErrorCode, VoiceResult};
-use crate::phoneme_tokens::{encode, strip_to_vocab, style_row, MAX_PHONEME_UNITS};
+use crate::phoneme_tokens::{encode, style_row, MAX_PHONEME_UNITS};
 
 /// The largest content-token count a planned utterance may use.
 ///
@@ -116,22 +116,22 @@ impl Piece {
         Self { phonemes: value.into(), is_override: true }
     }
 
-    /// Tokens this run occupies once the vocabulary filter has had its say: the count *this crate's*
-    /// `encode` produces, not the count the caller typed.
-    ///
-    /// It tracks `encode` on purpose. If that function learns the upstream behaviour -- an unmapped
-    /// character becoming a `PAD` token instead of vanishing, see `phoneme_tokens::id_for` -- this
-    /// becomes one short per affected character, and both have to change together.
+    /// Tokens this run occupies: one per character, because `encode` gives an unmapped character a
+    /// `PAD` slot rather than dropping it. So the budget is the caller's length, `style_row == units`
+    /// holds for any input, and neither number depends on which characters a given table happens to
+    /// carry. It used to be the *spellable* count, which is one short per unmapped character -- exactly
+    /// the size of a style-row drift that no assertion would have caught.
     #[must_use]
     pub fn units(&self) -> usize {
-        strip_to_vocab(&self.phonemes).chars().count()
+        self.phonemes.chars().count()
     }
 }
 
 /// One utterance: what to feed the graph, and which style row that implies.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Utterance {
-    /// The phonemes to encode, joined by single spaces, each run already vocabulary-filtered.
+    /// The phonemes to encode, joined by single spaces, verbatim: an unmapped character is
+    /// still in here, and `encode` gives it a `PAD` slot rather than removing it.
     pub phonemes: String,
     /// Content tokens [`Utterance::phonemes`] occupies.
     pub units: usize,
@@ -189,7 +189,7 @@ fn ends_chunk(phonemes: &str) -> bool {
 fn utterance_from(run: &[&Piece]) -> Utterance {
     let phonemes = run
         .iter()
-        .map(|piece| strip_to_vocab(&piece.phonemes))
+        .map(|piece| piece.phonemes.clone())
         .collect::<Vec<String>>()
         .join(" ");
     let units = phonemes.chars().count();
@@ -276,43 +276,50 @@ pub fn plan_pieces(pieces: &[Piece], policy: &PlanPolicy) -> VoiceResult<Plan> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::phoneme_tokens::MAX_TOKENS;
+    use crate::phoneme_tokens::{strip_to_vocab, MAX_TOKENS};
 
-    /// Vocab-safe ASCII phoneme-ish runs: every character here is in `SYMBOLS`, so `units` is the
-    /// literal character count and the expectations below are checkable by hand.
+    /// ASCII phoneme-ish runs. `units` is the literal character count for all of them -- `encode` no
+    /// longer changes a string's length -- which is what makes the numbers below checkable by hand.
     fn words(text: &str) -> Vec<Piece> {
         text.split_whitespace().map(Piece::phonemes).collect()
     }
 
     #[test]
-    fn nothing_in_is_nothing_out() {
+    fn nothing_in_is_nothing_out_and_something_unspellable_is_still_something() {
         let plan = plan_pieces(&[], &PlanPolicy::default()).unwrap();
-        assert!(plan.is_empty());
-        assert!(plan.utterances.is_empty(), "the plan and its Vec agree, which is all `len` could say");
+        assert!(plan.is_empty(), "no pieces, no utterances");
+        assert!(plan.utterances.is_empty(), "and the plan and its Vec agree");
 
-        // A run the vocabulary filter erases entirely bills nothing, so it must not become a chunk of
-        // its own. U+2603 is certainly absent from a 178-entry IPA table; a space is not, which is why
-        // this is not written as " " -- that one really does cost a token.
-        let dropped = Piece::phonemes("\u{2603}".to_string());
-        assert_eq!(dropped.units(), 0);
-        assert!(plan_pieces(&[dropped], &PlanPolicy::default()).unwrap().is_empty());
+        // The interesting half, and it changed when `encode` stopped dropping: a run of characters the
+        // table lacks (U+2603 is certainly absent from a 115-symbol IPA table) is *not* free, because the
+        // encoder gives each one a `PAD` slot. So it is planned as an utterance and gets a row, exactly as
+        // the reference would -- the sound is wrong, but the length, and therefore the prosody, is honest.
+        let unspellable = Piece::phonemes("\u{2603}".to_string());
+        assert_eq!(unspellable.units(), 1, "one character, one token, pad or no pad");
+        let plan = plan_pieces(&[unspellable], &PlanPolicy::default()).unwrap();
+        assert_eq!(plan.len(), 1);
+        assert_eq!(plan.style_rows(), vec![1], "and a row of its own, as upstream's ids would");
     }
 
     #[test]
-    fn units_are_billed_after_the_vocabulary_filter() {
-        // U+026B (the l-with-tilde some Indic G2P output produces) is not in the 178-entry table, which
-        // is why it must not be counted: a budget spent on a character `encode` drops is a budget spent
-        // on nothing. Written as an escape, so no transport encoding can mangle it.
-        let mut with_dropped = String::from("kala");
-        with_dropped.push('\u{026B}');
-        let piece = Piece::phonemes(with_dropped.clone());
-        assert_eq!(piece.phonemes.chars().count(), 5, "the caller's string is longer");
-        assert_eq!(piece.units(), 4, "the graph's is not");
+    fn every_character_is_billed_because_the_encoder_pads_rather_than_drops() {
+        // U+026B (l-with-tilde, which some Indic G2P output produces) is not in the table, so the graph
+        // gets a PAD for it -- and PAD is a token. Budgeting on the spellable characters only used to be
+        // one short per such character, and because the style row *is* the length, that is a prosody bug
+        // hiding in a counting rule. Escapes, so no transport encoding can mangle the character.
+        let piece = Piece::phonemes("ka\u{026B}la".to_string());
+        assert_eq!(piece.units(), 5, "five characters, five tokens, unmapped or not");
 
         let plan = plan_pieces(&[piece], &PlanPolicy::default()).unwrap();
-        assert_eq!(plan.utterances[0].phonemes, strip_to_vocab(&with_dropped));
-        assert_eq!(plan.utterances[0].units, 4);
-        assert_eq!(plan.style_rows(), vec![4], "and the row follows the filtered count");
+        let utterance = &plan.utterances[0];
+        assert_eq!(utterance.units, 5);
+        assert_eq!(utterance.style_row, 5, "the row is that length, not the filtered count");
+        assert_eq!(encode(&utterance.phonemes).len(), 7, "$ + 5 + $, nothing removed");
+        assert_eq!(
+            strip_to_vocab(&utterance.phonemes).chars().count(),
+            4,
+            "the filter is still the other behaviour, and is why it is not used for budgets"
+        );
     }
 
     #[test]
@@ -353,7 +360,7 @@ mod tests {
             .join(" ");
         let expected: String = pieces
             .iter()
-            .map(|p| strip_to_vocab(&p.phonemes))
+            .map(|p| p.phonemes.clone())
             .collect::<Vec<String>>()
             .join(" ");
         assert_eq!(planned, expected, "the chunks must rejoin into the input, spaces included");
@@ -447,28 +454,17 @@ mod tests {
         assert_eq!(one.len(), 1, "the default ceiling holds a sentence of this size");
         assert!(many.len() > 1, "a tighter one splits it");
         assert_ne!(one.style_rows(), many.style_rows());
-        // The row is the *graph's* length, not the caller's. This sentence loses a character on the
-        // way in: its `g` is not in the 178-symbol table (Kokoro's vocab carries U+0261 script-g
-        // instead), so `strip_to_vocab` drops it and the two totals differ by exactly one. Asserting
-        // the relationship rather than a constant keeps the test true if the table is ever regenerated,
-        // and asserting the difference keeps it from being silently re-earned by a future "cleanup".
+        // Asserted as a relationship, not a constant, so the test survives a regenerated table -- and
+        // it is a real relationship: "duga" contains an ASCII g, which the 115-entry table does not
+        // have. These two totals were one apart until `encode` learned to pad; they must not part again.
         let typed: usize =
             pieces.iter().map(|p| p.phonemes.chars().count()).sum::<usize>() + pieces.len() - 1;
-        let graphed: usize = pieces
-            .iter()
-            .map(|p| strip_to_vocab(&p.phonemes).chars().count())
-            .sum::<usize>()
-            + pieces.len()
-            - 1;
         assert_eq!(
             one.style_rows()[0],
-            graphed,
-            "one chunk reads the row for the whole sentence -- the row is the length, nothing else"
-        );
-        assert_eq!(
-            typed - graphed,
-            1,
-            "the sentence must still straddle the filter, or this test stopped proving the budget is counted after it"
+            typed,
+            "one chunk reads the row for the whole sentence: the row is the caller's length, and since \
+             `encode` pads rather than drops, that is also the graph's length -- \"duga\" holds an ASCII \
+             g the table lacks, and used to make these two numbers differ by one"
         );
     }
 

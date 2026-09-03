@@ -591,6 +591,30 @@ async fn cmd_verify(dir: &Path, limits: &PackLimits, pack_path: &Path) -> Result
         println!("  provenance       MISSING");
     }
 
+    // `voice-pack` deliberately accepts any non-blank IPA in `pronunciation_overrides`: which symbols are
+    // spellable is the tokenizer table's business, not the manifest format's. So this is where the two
+    // halves meet -- a pack that "fixes" a proper noun with a character the graph's table lacks would
+    // otherwise synthesize a pad token exactly where it asserted a sound, and nothing downstream reports
+    // it. Spelled out here rather than assumed, because `verify` is what a pack author runs.
+    match manifest.persona.as_ref() {
+        Some(persona) => {
+            let table = vocal_core::phoneme_tokens::SYMBOLS
+                .iter()
+                .filter(|c| **c != '\0')
+                .count();
+            match vocal_core::Persona::from_pack(persona).check_overrides_encodable() {
+                Ok(()) => {
+                    println!("  overrides            spellable in the engine's {table}-symbol table")
+                }
+                Err(e) => {
+                    println!("  overrides            FAIL — {e}");
+                    return Err(anyhow::Error::from(e));
+                }
+            }
+        }
+        None => println!("  overrides            (no persona declared)"),
+    }
+
     let (installed, _) = discover(dir, limits);
     println!(
         "\npass: manifest + limits + checksums + sizes validated ({limits:?})",

@@ -99,7 +99,11 @@ fn constants_match_the_measured_graph() {
 fn reference_phonemes_are_already_canonical() {
     let r = reference();
     let phonemes = r["request"]["phonemes"].as_str().unwrap();
-    assert_eq!(strip_to_vocab(phonemes), phonemes, "the reference string must need no stripping, else encode() diverged from the run that produced it");
+    assert_eq!(
+        strip_to_vocab(phonemes),
+        phonemes,
+        "every character of the reference string must be in the table, so that a `PAD` from an unmapped          character can never be what makes these recorded ids match"
+    );
     let ids = encode(phonemes);
     assert!(ids.iter().all(|&id| id <= MAX_ID));
     // Every interior id came from a real symbol, so none of them is the pad id: an interior pad
